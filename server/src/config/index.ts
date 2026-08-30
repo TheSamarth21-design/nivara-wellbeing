@@ -4,10 +4,13 @@ dotenv.config();
 export const config = {
   port: parseInt(process.env.PORT || '4000', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
-  supabase: {
-    url: process.env.SUPABASE_URL || '',
-    anonKey: process.env.SUPABASE_ANON_KEY || '',
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+  firebase: {
+    apiKey: process.env.FIREBASE_API_KEY || '',
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN || '',
+    projectId: process.env.FIREBASE_PROJECT_ID || '',
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || '',
+    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '',
+    appId: process.env.FIREBASE_APP_ID || ''
   },
   ai: {
     apiKey: process.env.AI_PROVIDER_API_KEY || '',

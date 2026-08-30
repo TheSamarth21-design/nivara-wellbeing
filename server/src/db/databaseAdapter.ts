@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { supabaseClient } from './supabaseClient.js';
+import { firebaseDb } from './firebaseClient.js';
 
 export interface UserIdentity {
   id: string;
@@ -35,24 +35,24 @@ export interface AcademicContext {
 export interface RoutineProfile {
   id: string;
   wellbeing_id: string;
-  sleep_duration?: string;
-  routine_structure?: string;
-  study_pattern?: string;
+  sleep_duration: string;
+  routine_structure: string;
+  study_pattern: string;
 }
 
 export interface StudentStressors {
   id: string;
   wellbeing_id: string;
   stressor_tags: string[];
-  social_connection?: string;
-  primary_turn_to?: string;
+  social_connection: string;
+  primary_turn_to: string;
 }
 
 export interface SupportPreferences {
   id: string;
   wellbeing_id: string;
   comfortable_support_types: string[];
-  response_preference?: string;
+  response_preference: string;
 }
 
 export interface StudentConsent {
@@ -72,8 +72,8 @@ export interface StudentConsent {
 export interface WellbeingCheckin {
   id: string;
   wellbeing_id: string;
-  mood_tier: 'good' | 'okay' | 'not_great' | 'difficult';
-  mood_score: number;
+  mood_tier: 'Great' | 'Good' | 'Okay' | 'Struggling' | 'Crisis';
+  mood_score: number; // 1-5
   feeling_tags: string[];
   note?: string;
   created_at: string;
@@ -84,7 +84,7 @@ export interface TwinBaseline {
   wellbeing_id: string;
   baseline_mood_avg: number;
   checkin_count: number;
-  current_pattern_state: 'Cold Start' | 'Stable' | 'Changing' | 'Improving' | 'Needs Attention';
+  current_pattern_state: 'Stable' | 'Changing' | 'Improving' | 'Needs Attention';
   confidence_level: 'Initial' | 'Moderate' | 'Established';
   last_shift_detected?: string;
   updated_at: string;
@@ -93,9 +93,9 @@ export interface TwinBaseline {
 export interface AIMessage {
   id: string;
   wellbeing_id: string;
-  sender: 'user' | 'assistant' | 'system';
+  sender: 'user' | 'assistant';
   message: string;
-  safety_tier: 'GREEN' | 'YELLOW' | 'RED';
+  safety_tier: 'SAFE' | 'VULNERABLE' | 'CRISIS' | 'GREEN' | 'YELLOW' | 'RED';
   suggested_action?: string;
   created_at: string;
 }
@@ -111,9 +111,10 @@ export interface AIMemoryItem {
 export interface SupportRequest {
   id: string;
   wellbeing_id: string;
-  reason?: string;
+  reason: string;
   priority: 'STANDARD' | 'PRIORITY' | 'URGENT';
-  status: 'PENDING' | 'ACCEPTED' | 'IN_SESSION' | 'COMPLETED' | 'CANCELLED';
+  status: 'PENDING' | 'ACCEPTED' | 'IN_PROGRESS' | 'IN_SESSION' | 'RESOLVED' | 'CLOSED' | 'COMPLETED';
+  counsellor_id?: string;
   assigned_counsellor_id?: string;
   created_at: string;
   updated_at: string;
@@ -132,8 +133,7 @@ export interface SupportFollowup {
   support_request_id: string;
   wellbeing_id: string;
   scheduled_for: string;
-  status: 'SCHEDULED' | 'COMPLETED' | 'SKIPPED';
-  student_feedback_mood?: string;
+  status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
   notes?: string;
   created_at: string;
 }
@@ -142,8 +142,19 @@ export interface SimulationHistoryItem {
   id: string;
   wellbeing_id: string;
   scenario_title: string;
-  selected_pathway: string;
-  projected_implication: string;
+  parameters?: {
+    sleep_change_hours: number;
+    upcoming_exam: boolean;
+    workload_multiplier: number;
+    social_engagement: 'LOW' | 'NORMAL' | 'HIGH';
+  };
+  predicted_outcome?: {
+    stress_forecast: 'Low' | 'Moderate' | 'High' | 'Severe';
+    energy_trajectory: string;
+    actionable_interventions: string[];
+  };
+  selected_pathway?: string;
+  projected_implication?: string;
   created_at: string;
 }
 
@@ -155,7 +166,10 @@ export interface AuditLogItem {
   created_at: string;
 }
 
-class DatabaseAdapter {
+/**
+ * Resilient In-Memory & Cloud Database Adapter for Nivara
+ */
+export class DatabaseAdapter {
   private users: Map<string, UserIdentity> = new Map();
   private profiles: Map<string, StudentProfile> = new Map();
   private academics: Map<string, AcademicContext> = new Map();
@@ -175,7 +189,6 @@ class DatabaseAdapter {
 
   constructor() {
     this.seedInstitutionalAccounts();
-    this.initSupabaseSync();
   }
 
   private seedInstitutionalAccounts() {
@@ -202,20 +215,6 @@ class DatabaseAdapter {
       created_at: new Date().toISOString()
     };
     this.users.set(admin.wellbeing_id, admin);
-  }
-
-  private async initSupabaseSync() {
-    if (!supabaseClient) return;
-    try {
-      console.log('🌿 Syncing live Supabase PostgreSQL connection...');
-      const { data: usersData } = await supabaseClient.from('user_identity_mapping').select('*');
-      if (usersData) {
-        usersData.forEach((u: any) => this.users.set(u.wellbeing_id, u));
-        console.log(`✅ Loaded ${usersData.length} records from Supabase user_identity_mapping`);
-      }
-    } catch (e) {
-      console.log('Using local fallback memory adapter alongside Supabase:', e);
-    }
   }
 
   // --- Auth & Identity Separation ---
@@ -264,7 +263,7 @@ class DatabaseAdapter {
       wellbeing_id: wellbeingId,
       baseline_mood_avg: 3.0,
       checkin_count: 0,
-      current_pattern_state: 'Cold Start',
+      current_pattern_state: 'Stable',
       confidence_level: 'Initial',
       last_shift_detected: 'Getting to know your natural daily baseline',
       updated_at: new Date().toISOString()
@@ -272,32 +271,6 @@ class DatabaseAdapter {
     this.twinBaselines.set(wellbeingId, twin);
 
     this.logAudit(wellbeingId, 'USER_REGISTERED', { isMobile });
-
-    // Asynchronously sync to Supabase PostgreSQL
-    if (supabaseClient) {
-      supabaseClient.from('user_identity_mapping').insert([{
-        auth_user_id: user.auth_user_id,
-        wellbeing_id: user.wellbeing_id,
-        email: user.email,
-        mobile: user.mobile,
-        role: user.role,
-        onboarding_completed: user.onboarding_completed
-      }]).then(() => {}).catch(e => console.error('Supabase user insert error:', e));
-
-      supabaseClient.from('student_consents').insert([{
-        wellbeing_id: user.wellbeing_id
-      }]).then(() => {}).catch(e => console.error('Supabase consent insert error:', e));
-
-      supabaseClient.from('twin_baselines').insert([{
-        wellbeing_id: user.wellbeing_id,
-        baseline_mood_avg: 3.0,
-        checkin_count: 0,
-        current_pattern_state: 'Cold Start',
-        confidence_level: 'Initial',
-        last_shift_detected: 'Getting to know your natural daily baseline'
-      }]).then(() => {}).catch(e => console.error('Supabase twin insert error:', e));
-    }
-
     return user;
   }
 
@@ -306,12 +279,6 @@ class DatabaseAdapter {
     if (user) {
       user.onboarding_completed = true;
       this.logAudit(wellbeingId, 'ONBOARDING_COMPLETED');
-      if (supabaseClient) {
-        supabaseClient.from('user_identity_mapping')
-          .update({ onboarding_completed: true })
-          .eq('wellbeing_id', wellbeingId)
-          .then(() => {}).catch(() => {});
-      }
     }
   }
 
@@ -323,18 +290,6 @@ class DatabaseAdapter {
   public saveProfile(profile: StudentProfile): void {
     this.profiles.set(profile.wellbeing_id, profile);
     this.logAudit(profile.wellbeing_id, 'PROFILE_UPDATED');
-    if (supabaseClient) {
-      supabaseClient.from('student_profiles').upsert([{
-        wellbeing_id: profile.wellbeing_id,
-        preferred_name: profile.preferred_name,
-        age_range: profile.age_range,
-        education_level: profile.education_level,
-        year_of_study: profile.year_of_study,
-        department: profile.department,
-        primary_goal: profile.primary_goal,
-        preferred_language: profile.preferred_language
-      }]).then(() => {}).catch(() => {});
-    }
   }
 
   public getAcademicContext(wellbeingId: string): AcademicContext | undefined {
@@ -343,14 +298,6 @@ class DatabaseAdapter {
 
   public saveAcademicContext(ctx: AcademicContext): void {
     this.academics.set(ctx.wellbeing_id, ctx);
-    if (supabaseClient) {
-      supabaseClient.from('academic_context').upsert([{
-        wellbeing_id: ctx.wellbeing_id,
-        current_workload: ctx.current_workload,
-        upcoming_event: ctx.upcoming_event,
-        academic_pressure: ctx.academic_pressure
-      }]).then(() => {}).catch(() => {});
-    }
   }
 
   public getRoutineProfile(wellbeingId: string): RoutineProfile | undefined {
@@ -359,14 +306,6 @@ class DatabaseAdapter {
 
   public saveRoutineProfile(routine: RoutineProfile): void {
     this.routines.set(routine.wellbeing_id, routine);
-    if (supabaseClient) {
-      supabaseClient.from('routine_profiles').upsert([{
-        wellbeing_id: routine.wellbeing_id,
-        sleep_duration: routine.sleep_duration,
-        routine_structure: routine.routine_structure,
-        study_pattern: routine.study_pattern
-      }]).then(() => {}).catch(() => {});
-    }
   }
 
   public getStressors(wellbeingId: string): StudentStressors | undefined {
@@ -375,14 +314,6 @@ class DatabaseAdapter {
 
   public saveStressors(stressors: StudentStressors): void {
     this.stressors.set(stressors.wellbeing_id, stressors);
-    if (supabaseClient) {
-      supabaseClient.from('student_stressors').upsert([{
-        wellbeing_id: stressors.wellbeing_id,
-        stressor_tags: stressors.stressor_tags,
-        social_connection: stressors.social_connection,
-        primary_turn_to: stressors.primary_turn_to
-      }]).then(() => {}).catch(() => {});
-    }
   }
 
   public getSupportPreferences(wellbeingId: string): SupportPreferences | undefined {
@@ -391,13 +322,6 @@ class DatabaseAdapter {
 
   public saveSupportPreferences(prefs: SupportPreferences): void {
     this.supportPrefs.set(prefs.wellbeing_id, prefs);
-    if (supabaseClient) {
-      supabaseClient.from('support_preferences').upsert([{
-        wellbeing_id: prefs.wellbeing_id,
-        comfortable_support_types: prefs.comfortable_support_types,
-        response_preference: prefs.response_preference
-      }]).then(() => {}).catch(() => {});
-    }
   }
 
   public getConsents(wellbeingId: string): StudentConsent | undefined {
@@ -407,19 +331,6 @@ class DatabaseAdapter {
   public saveConsents(consent: StudentConsent): void {
     this.consents.set(consent.wellbeing_id, consent);
     this.logAudit(consent.wellbeing_id, 'CONSENT_UPDATED', { version: consent.version });
-    if (supabaseClient) {
-      supabaseClient.from('student_consents').upsert([{
-        wellbeing_id: consent.wellbeing_id,
-        consent_ai_personalization: consent.consent_ai_personalization,
-        consent_checkins: consent.consent_checkins,
-        consent_academic_context: consent.consent_academic_context,
-        consent_routine_data: consent.consent_routine_data,
-        consent_counsellor_sharing: consent.consent_counsellor_sharing,
-        consent_campus_analytics: consent.consent_campus_analytics,
-        consent_ai_memory: consent.consent_ai_memory,
-        version: consent.version
-      }]).then(() => {}).catch(() => {});
-    }
   }
 
   // --- Checkins ---
@@ -438,17 +349,6 @@ class DatabaseAdapter {
     };
     this.checkins.unshift(item);
     this.logAudit(checkin.wellbeing_id, 'CHECKIN_RECORDED', { mood: checkin.mood_tier });
-
-    if (supabaseClient) {
-      supabaseClient.from('wellbeing_checkins').insert([{
-        wellbeing_id: item.wellbeing_id,
-        mood_tier: item.mood_tier,
-        mood_score: item.mood_score,
-        feeling_tags: item.feeling_tags,
-        note: item.note
-      }]).then(() => {}).catch(() => {});
-    }
-
     return item;
   }
 
@@ -459,16 +359,6 @@ class DatabaseAdapter {
 
   public updateTwinBaseline(baseline: TwinBaseline): void {
     this.twinBaselines.set(baseline.wellbeing_id, baseline);
-    if (supabaseClient) {
-      supabaseClient.from('twin_baselines').upsert([{
-        wellbeing_id: baseline.wellbeing_id,
-        baseline_mood_avg: baseline.baseline_mood_avg,
-        checkin_count: baseline.checkin_count,
-        current_pattern_state: baseline.current_pattern_state,
-        confidence_level: baseline.confidence_level,
-        last_shift_detected: baseline.last_shift_detected
-      }]).then(() => {}).catch(() => {});
-    }
   }
 
   // --- AI Companion & Memory ---
@@ -486,17 +376,6 @@ class DatabaseAdapter {
       created_at: new Date().toISOString()
     };
     this.aiMessages.push(item);
-
-    if (supabaseClient) {
-      supabaseClient.from('ai_conversations').insert([{
-        wellbeing_id: item.wellbeing_id,
-        sender: item.sender,
-        message: item.message,
-        safety_tier: item.safety_tier,
-        suggested_action: item.suggested_action
-      }]).then(() => {}).catch(() => {});
-    }
-
     return item;
   }
 
@@ -514,15 +393,6 @@ class DatabaseAdapter {
     };
     this.aiMemories.push(item);
     this.logAudit(wellbeingId, 'AI_MEMORY_ADDED', { key });
-
-    if (supabaseClient) {
-      supabaseClient.from('ai_memory_items').insert([{
-        wellbeing_id: item.wellbeing_id,
-        memory_key: item.memory_key,
-        memory_value: item.memory_value
-      }]).then(() => {}).catch(() => {});
-    }
-
     return item;
   }
 
@@ -554,17 +424,6 @@ class DatabaseAdapter {
     };
     this.supportRequests.set(req.id, req);
     this.logAudit(wellbeingId, 'SUPPORT_REQUESTED', { priority });
-
-    if (supabaseClient) {
-      supabaseClient.from('support_requests').insert([{
-        id: req.id,
-        wellbeing_id: req.wellbeing_id,
-        reason: req.reason,
-        priority: req.priority,
-        status: req.status
-      }]).then(() => {}).catch(() => {});
-    }
-
     return req;
   }
 
@@ -581,13 +440,6 @@ class DatabaseAdapter {
     if (req) {
       Object.assign(req, updates, { updated_at: new Date().toISOString() });
       this.logAudit(req.wellbeing_id, 'SUPPORT_STATUS_UPDATED', { status: req.status });
-
-      if (supabaseClient) {
-        supabaseClient.from('support_requests')
-          .update(updates)
-          .eq('id', id)
-          .then(() => {}).catch(() => {});
-      }
       return req;
     }
     return undefined;
@@ -606,15 +458,6 @@ class DatabaseAdapter {
       created_at: new Date().toISOString()
     };
     this.counsellorMessages.push(item);
-
-    if (supabaseClient) {
-      supabaseClient.from('counsellor_messages').insert([{
-        support_request_id: requestId,
-        sender_role: role,
-        message: message
-      }]).then(() => {}).catch(() => {});
-    }
-
     return item;
   }
 
@@ -717,11 +560,6 @@ class DatabaseAdapter {
     this.followups = this.followups.filter(f => f.wellbeing_id !== wellbeingId);
 
     this.logAudit(wellbeingId, 'USER_DATA_PURGED');
-
-    if (supabaseClient) {
-      supabaseClient.from('user_identity_mapping').delete().eq('wellbeing_id', wellbeingId).then(() => {}).catch(() => {});
-    }
-
     return true;
   }
 
@@ -734,14 +572,6 @@ class DatabaseAdapter {
       created_at: new Date().toISOString()
     };
     this.auditLogs.push(item);
-
-    if (supabaseClient) {
-      supabaseClient.from('audit_logs').insert([{
-        wellbeing_id: item.wellbeing_id,
-        action: item.action,
-        details: item.details
-      }]).then(() => {}).catch(() => {});
-    }
   }
 
   public getAuditLogs(): AuditLogItem[] {
@@ -750,3 +580,4 @@ class DatabaseAdapter {
 }
 
 export const db = new DatabaseAdapter();
+export const dbAdapter = db;

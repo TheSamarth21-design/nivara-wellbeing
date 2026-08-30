@@ -48,7 +48,8 @@ companionRouter.post('/memory', (req: AuthRequest, res) => {
 
 companionRouter.delete('/memory/:id', (req: AuthRequest, res) => {
   const wellbeingId = req.user!.wellbeingId;
-  const success = db.deleteAIMemory(wellbeingId, req.params.id);
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const success = db.deleteAIMemory(wellbeingId, id);
   res.json({ success });
 });
 
