@@ -1,0 +1,39 @@
+{
+  "name": "nivara-wellbeing-twin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nivara — Digital Twin for Student Wellbeing & Anonymous Campus Radar (SIH 2026)",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "tsx watch server/src/index.ts",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "npm --prefix client run build",
+    "build:server": "tsc -p server/tsconfig.json",
+    "start": "node server/dist/index.js",
+    "test": "tsx tests/run-all.ts",
+    "mobile:start": "npm --prefix mobile run start",
+    "mobile:build:apk": "npm --prefix mobile run build:apk",
+    "mobile:build:aab": "npm --prefix mobile run build:aab",
+    "mobile:update": "npm --prefix mobile run update"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "uuid": "^11.1.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.5",
+    "@types/uuid": "^10.0.0",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}
