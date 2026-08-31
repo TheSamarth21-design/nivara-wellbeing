@@ -7,9 +7,10 @@
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "tsx watch server/src/index.ts",
     "dev:client": "npm --prefix client run dev",
-    "build": "npm run build:client && npm run build:server",
+    "build": "npm run build:client && npm run build:server && npm run build:api",
     "build:client": "npm --prefix client run build",
     "build:server": "tsc -p server/tsconfig.json",
+    "build:api": "esbuild server/src/app.ts --bundle --platform=node --target=node18 --outfile=api/index.js",
     "start": "node server/dist/index.js",
     "test": "tsx tests/run-all.ts",
     "mobile:start": "npm --prefix mobile run start",
@@ -33,6 +34,7 @@
     "@types/node": "^22.13.5",
     "@types/uuid": "^10.0.0",
     "concurrently": "^9.1.2",
+    "esbuild": "^0.25.0",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3"
   }
