@@ -1,7 +1,8 @@
-import { ContextService } from './contextService.js';
+import { ContextService, ConsentedContext } from './contextService.js';
 import { RiskEngine } from '../safety/riskEngine.js';
 import { SafetyResponseService } from '../safety/safetyResponseService.js';
 import { db } from '../../db/databaseAdapter.js';
+import { config } from '../../config/index.js';
 
 export class CompanionService {
   public static async processUserMessage(wellbeingId: string, message: string): Promise<{
@@ -56,8 +57,15 @@ export class CompanionService {
       };
     }
 
-    // Standard Green Empathetic Response Generation
-    const reply = this.generateEmpatheticResponse(message, context);
+    // Standard Green Empathetic Response Generation (Gemini AI with deterministic fallback)
+    let reply = '';
+    if (config.ai.apiKey) {
+      reply = await this.generateGeminiResponse(message, context);
+    }
+    
+    if (!reply) {
+      reply = this.generateEmpatheticResponse(message, context);
+    }
     
     db.addAIMessage({
       wellbeing_id: wellbeingId,
@@ -70,6 +78,54 @@ export class CompanionService {
       reply,
       safetyTier: 'GREEN'
     };
+  }
+
+  private static async generateGeminiResponse(msg: string, ctx: ConsentedContext): Promise<string> {
+    try {
+      const apiKey = config.ai.apiKey;
+      const model = config.ai.model || 'gemini-3.6-flash';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+      const systemPrompt = `You are Nivara AI, a warm, compassionate, empathetic student mental wellbeing digital companion on an Indian university campus.
+Tone & Persona:
+- Warm, non-judgmental, grounded, supportive, and validating.
+- Keep answers concise (2 to 4 sentences max) so they are easy to read on mobile.
+- Offer actionable micro-coping strategies (breathing, 5-minute break, task chunking) when appropriate.
+- Never give clinical diagnoses, medical prescriptions, or toxic positivity.
+- Preferred user name: ${ctx.preferredName || 'Friend'}.
+${ctx.primaryGoal ? `- User goal: ${ctx.primaryGoal}` : ''}
+${ctx.academicWorkload ? `- Academic workload: ${ctx.academicWorkload}` : ''}
+${ctx.routineSleep ? `- Routine sleep: ${ctx.routineSleep}` : ''}
+${ctx.recentCheckinMood ? `- Recent mood: ${ctx.recentCheckinMood}` : ''}
+${ctx.stressors?.length ? `- Stressors: ${ctx.stressors.join(', ')}` : ''}
+${ctx.approvedMemories?.length ? `- Consented memories: ${ctx.approvedMemories.map(m => `${m.key}: ${m.value}`).join('; ')}` : ''}`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: msg }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: {
+            maxOutputTokens: 300,
+            temperature: 0.7
+          }
+        }),
+        signal: AbortSignal.timeout(6000)
+      });
+
+      if (!response.ok) {
+        console.warn(`[Gemini API] Request failed with status ${response.status}`);
+        return '';
+      }
+
+      const data = await response.json() as any;
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      return text || '';
+    } catch (err) {
+      console.warn('[Gemini API] Failed to generate response, falling back to local engine:', (err as Error).message);
+      return '';
+    }
   }
 
   private static generateEmpatheticResponse(msg: string, ctx: any): string {
@@ -99,3 +155,4 @@ export class CompanionService {
     return `Thank you for sharing that with me, ${name}. You don't have to figure everything out all at once. What would feel most supportive for you right now?`;
   }
 }
+

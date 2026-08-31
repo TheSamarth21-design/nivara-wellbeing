@@ -5,7 +5,10 @@ dist/
 client/dist/
 server/dist/
 .env
-.env.local
+.env.*
+*.env
+client/.env
+client/.env.*
 *.log
 .DS_Store
 .expo/

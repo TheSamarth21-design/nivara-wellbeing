@@ -1,4 +1,4 @@
-const API_BASE = '/api';
+const API_BASE = (import.meta.env?.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '') + '/api';
 
 export class ApiClient {
   private static wellbeingId: string = localStorage.getItem('nivara_wellbeing_id') || localStorage.getItem('kindred_wellbeing_id') || 'WELL-8F42';
@@ -19,14 +19,36 @@ export class ApiClient {
       ...(options.headers as Record<string, string> || {})
     };
 
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers
+      });
+    } catch (err: any) {
+      throw new Error(`Cannot connect to server at ${API_BASE}. Please ensure backend is running.`);
+    }
 
+    const contentType = res.headers.get('content-type') || '';
     if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ message: 'Network request failed' }));
-      throw new Error(errorData.message || `HTTP error ${res.status}`);
+      if (contentType.includes('application/json')) {
+        const errorData = await res.json().catch(() => ({ message: 'Request failed' }));
+        throw new Error(errorData.message || `HTTP error ${res.status}`);
+      } else {
+        const text = await res.text().catch(() => '');
+        if (res.status === 405 || text.includes('<!doctype') || text.includes('<html')) {
+          throw new Error(`Backend API route (${endpoint}) returned 405 / HTML. Ensure the backend server is running and /api is properly routed.`);
+        }
+        throw new Error(`HTTP error ${res.status}: ${text.slice(0, 100)}`);
+      }
+    }
+
+    if (!contentType.includes('application/json')) {
+      const text = await res.text().catch(() => '');
+      if (text.includes('<!doctype') || text.includes('<html')) {
+        throw new Error(`Server returned HTML instead of JSON for ${endpoint}. Backend API may be unreachable.`);
+      }
+      return text;
     }
 
     return res.json();
