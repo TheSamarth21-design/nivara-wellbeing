@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MoodTier, TwinStatus } from '../../types';
 import { ApiClient } from '../../lib/apiClient';
 import { useLanguage } from '../../context/LanguageContext';
@@ -21,55 +21,96 @@ export const EmotionalCenter: React.FC<Props> = ({
   onUpdatePreferredName
 }) => {
   const { t } = useLanguage();
-  const [selectedMood, setSelectedMood] = useState<MoodTier | null>(null);
+
+  // Multi-metric Check-in State
+  const [moodScore, setMoodScore] = useState<number | null>(null);
+  const [energyLevel, setEnergyLevel] = useState<'High' | 'Normal' | 'Low' | 'Very Low'>('Normal');
+  const [stressLevel, setStressLevel] = useState<'Low' | 'Moderate' | 'High'>('Moderate');
+  const [sleepQuality, setSleepQuality] = useState<'Good' | 'Okay' | 'Poor'>('Okay');
+  const [showOptionalNote, setShowOptionalNote] = useState(false);
+  const [optionalNote, setOptionalNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [submittedToday, setSubmittedToday] = useState(false);
-  const [showContextBanner, setShowContextBanner] = useState(true);
-  const [quickWorkload, setQuickWorkload] = useState<'Low' | 'Moderate' | 'High' | 'Very high'>('High');
+
+  // Smart Adaptive Question State
+  const [adaptiveQuestion, setAdaptiveQuestion] = useState<{
+    id: string;
+    question: string;
+    options: string[];
+  } | null>(null);
+  const [adaptiveDismissed, setAdaptiveDismissed] = useState(false);
+  const [adaptiveSelectedOption, setAdaptiveSelectedOption] = useState<string | null>(null);
+
+  // Preferred Name inline editing
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(preferredName || '');
 
-  // Dynamic time-of-day greeting
-  const hour = new Date().getHours();
-  const greetingTime = hour < 12 ? t('good_morning', 'Good morning') : hour < 17 ? t('good_afternoon', 'Good afternoon') : t('good_evening', 'Good evening');
+  // Load any pending adaptive question on mount
+  useEffect(() => {
+    ApiClient.getAdaptiveQuestion().then((q) => {
+      if (q) setAdaptiveQuestion(q);
+    });
+  }, []);
 
-  const handleMoodSelect = async (tier: MoodTier) => {
-    setSelectedMood(tier);
+  // Time-of-day greeting
+  const hour = new Date().getHours();
+  const greetingTime =
+    hour < 12
+      ? t('good_morning', 'Good morning')
+      : hour < 17
+      ? t('good_afternoon', 'Good afternoon')
+      : t('good_evening', 'Good evening');
+
+  const moodOptions = [
+    { score: 5, emoji: '😄', label: 'Great', tier: 'good', color: 'hover:border-primary border-outline-variant/40' },
+    { score: 4, emoji: '🙂', label: 'Good', tier: 'good', color: 'hover:border-primary border-outline-variant/40' },
+    { score: 3, emoji: '😐', label: 'Okay', tier: 'okay', color: 'hover:border-secondary border-outline-variant/40' },
+    { score: 2, emoji: '😟', label: 'Low', tier: 'not_great', color: 'hover:border-tertiary border-outline-variant/40' },
+    { score: 1, emoji: '😞', label: 'Very Low', tier: 'difficult', color: 'hover:border-error border-outline-variant/40' }
+  ];
+
+  const handleMoodSelect = async (score: number) => {
+    setMoodScore(score);
     setLoading(true);
 
     try {
-      await ApiClient.submitCheckin({
-        moodTier: tier,
-        feelingTags: [tier, 'quick_bento'],
-        note: `Quick 1-tap check-in: ${tier}`
+      const res = await ApiClient.submitEnhancedCheckin({
+        moodScore: score,
+        energyLevel,
+        stressLevel,
+        sleepQuality,
+        note: optionalNote.trim() || undefined
       });
+
       setSubmittedToday(true);
+      if (res?.adaptiveQuestion) {
+        setAdaptiveQuestion(res.adaptiveQuestion);
+      }
       onCheckinSubmitted();
     } catch (e) {
-      console.error(e);
+      console.error('Checkin error:', e);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpdateContext = async () => {
+  const handleAdaptiveAnswer = async (option: string) => {
+    setAdaptiveSelectedOption(option);
+    // Add memory to companion context seamlessly
     try {
-      await fetch('/api/twin/context', {
+      await ApiClient.request('/companion/memory', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          academicContext: {
-            workload: quickWorkload,
-            upcomingEvent: 'Exams approaching',
-            pressure: 'Quite stressful'
-          }
+          key: 'Primary stress contributor',
+          value: option
         })
       });
-      setShowContextBanner(false);
-      onCheckinSubmitted();
-    } catch (e) {
-      console.error(e);
+    } catch {
+      // Non-blocking
     }
+    setTimeout(() => {
+      setAdaptiveQuestion(null);
+    }, 1500);
   };
 
   const handleSaveName = (e: React.FormEvent) => {
@@ -79,13 +120,6 @@ export const EmotionalCenter: React.FC<Props> = ({
       setIsEditingName(false);
     }
   };
-
-  const moodOptions: Array<{ tier: MoodTier; emoji: string; label: string; bg: string }> = [
-    { tier: 'good', emoji: '🙂', label: t('mood_good', 'Good'), bg: 'bg-primary-fixed/20 hover:bg-primary-fixed/40' },
-    { tier: 'okay', emoji: '😐', label: t('mood_okay', 'Okay'), bg: 'bg-secondary-fixed/20 hover:bg-secondary-fixed/40' },
-    { tier: 'not_great', emoji: '😕', label: t('mood_not_great', 'Not great'), bg: 'bg-tertiary-fixed/20 hover:bg-tertiary-fixed/40' },
-    { tier: 'difficult', emoji: '😣', label: t('mood_difficult', 'Difficult'), bg: 'bg-error-container/40 hover:bg-error-container/60' }
-  ];
 
   return (
     <div className="max-w-[1100px] mx-auto px-4 py-6 flex flex-col gap-6 animate-fadeIn pb-24">
@@ -105,7 +139,7 @@ export const EmotionalCenter: React.FC<Props> = ({
                 setIsEditingName(!isEditingName);
               }}
               className="text-[11px] text-on-surface-variant/70 hover:text-primary p-1 rounded-full hover:bg-surface-container flex items-center"
-              title="Edit your preferred display name"
+              title="Edit display name"
             >
               <span className="material-symbols-outlined text-sm">edit</span>
             </button>
@@ -143,84 +177,310 @@ export const EmotionalCenter: React.FC<Props> = ({
         </p>
       </section>
 
-      {/* Contextual Update Banner ("Has anything changed?") */}
-      {showContextBanner && (
-        <section className="p-4 rounded-3xl bg-secondary-container/30 border border-secondary-container/60 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center text-on-secondary text-base">
-              📅
+      {/* Smart Adaptive Question Card (Triggers upon High Stress / Low Mood) */}
+      {adaptiveQuestion && !adaptiveDismissed && (
+        <section className="p-5 rounded-3xl bg-secondary-container/25 border border-secondary-container shadow-sm flex flex-col gap-3 animate-fadeIn">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">🌿</span>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-on-background">
+                  {adaptiveQuestion.question}
+                </span>
+                <span className="text-[11px] text-on-surface-variant">
+                  Optional — helps Nivara tailor today's conversations
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-on-background">
-                {t('routine_question', 'Has anything changed in your routine or exams?')}
-              </span>
-              <span className="text-[11px] text-on-surface-variant">
-                {t('routine_sub', 'Update your context to keep your Twin baseline calibrated.')}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 self-end sm:self-center">
-            <select
-              value={quickWorkload}
-              onChange={(e) => setQuickWorkload(e.target.value as any)}
-              className="text-xs bg-surface-container-lowest px-3 py-1.5 rounded-lg border border-outline-variant/60 text-on-surface"
-            >
-              <option value="Low">Low Workload</option>
-              <option value="Moderate">Moderate</option>
-              <option value="High">High Workload</option>
-              <option value="Very high">Very High</option>
-            </select>
             <button
-              onClick={handleUpdateContext}
-              className="px-3.5 py-1.5 rounded-lg bg-secondary text-on-secondary text-xs font-semibold hover:opacity-90"
+              type="button"
+              onClick={() => setAdaptiveDismissed(true)}
+              className="text-xs text-on-surface-variant hover:text-on-surface p-1 rounded-full"
+              title="Dismiss question"
             >
-              {t('update_btn', 'Update')}
-            </button>
-            <button
-              onClick={() => setShowContextBanner(false)}
-              className="text-xs text-on-surface-variant hover:text-on-surface px-2"
-            >
-              {t('not_now_btn', 'Not now')}
+              ✕
             </button>
           </div>
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            {adaptiveQuestion.options.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => handleAdaptiveAnswer(opt)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                  adaptiveSelectedOption === opt
+                    ? 'bg-secondary text-on-secondary border-secondary shadow-sm'
+                    : 'bg-surface-container-lowest border-outline-variant/50 text-on-surface hover:bg-surface-container'
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+
+          {adaptiveSelectedOption && (
+            <span className="text-[11px] text-primary font-medium mt-1">
+              ✓ Understood. Nivara will keep this in mind.
+            </span>
+          )}
         </section>
       )}
 
-      {/* 4-Tier Daily Check-In Bento */}
-      <section className="bg-surface-container-lowest rounded-3xl p-6 shadow-sm border border-surface-variant/50 flex flex-col gap-4">
+      {/* Today's Wellbeing Check-In Bento */}
+      <section className="bg-surface-container-lowest rounded-3xl p-6 shadow-sm border border-surface-variant/50 flex flex-col gap-5">
         <div className="flex items-center justify-between">
-          <h2 className="font-headline font-semibold text-base text-on-background">
-            {t('checkin_title', 'How are things feeling today?')}
-          </h2>
+          <div className="flex flex-col">
+            <h2 className="font-headline font-bold text-base text-on-background">
+              {t('checkin_title', 'How are you feeling today?')}
+            </h2>
+            <span className="text-xs text-on-surface-variant">
+              Quick 1-tap selectors — no typing needed
+            </span>
+          </div>
           {submittedToday && (
-            <span className="text-xs text-primary font-medium flex items-center gap-1">
+            <span className="text-xs text-primary font-bold flex items-center gap-1 bg-primary/10 px-3 py-1 rounded-full">
               ✓ Logged to Twin
             </span>
           )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* 1. Emoji Mood Selector (5 levels) */}
+        <div className="grid grid-cols-5 gap-2 sm:gap-3">
           {moodOptions.map((opt) => (
             <button
-              key={opt.tier}
-              onClick={() => handleMoodSelect(opt.tier)}
+              key={opt.score}
+              type="button"
+              onClick={() => handleMoodSelect(opt.score)}
               disabled={loading}
-              className={`flex flex-col items-center justify-center p-5 rounded-2xl border border-outline-variant/40 transition-all duration-200 group ${opt.bg} ${
-                selectedMood === opt.tier ? 'ring-2 ring-primary scale-102 font-bold' : ''
+              className={`flex flex-col items-center justify-center py-3.5 px-2 rounded-2xl border transition-all duration-200 ${
+                moodScore === opt.score
+                  ? 'bg-primary/15 border-primary ring-2 ring-primary/30 shadow-sm scale-102'
+                  : 'bg-surface-container-low ' + opt.color
               }`}
             >
-              <span className="text-3xl group-hover:scale-110 transition-transform duration-200 mb-2">
+              <span className="text-2xl sm:text-3xl mb-1 hover:scale-110 transition-transform">
                 {opt.emoji}
               </span>
-              <span className="text-xs text-on-surface font-medium">{opt.label}</span>
+              <span className="text-[11px] sm:text-xs font-semibold text-on-surface text-center">
+                {opt.label}
+              </span>
             </button>
           ))}
         </div>
+
+        {/* 2. Energy, Stress & Sleep Segmented Selectors */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-surface-variant/30">
+          {/* Energy */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-bold text-on-background">Energy today:</span>
+            <div className="grid grid-cols-4 gap-1">
+              {[
+                { id: 'High', icon: '⚡' },
+                { id: 'Normal', icon: '🔋' },
+                { id: 'Low', icon: '🪫' },
+                { id: 'Very Low', icon: '💤' }
+              ].map((lvl) => (
+                <button
+                  key={lvl.id}
+                  type="button"
+                  onClick={() => setEnergyLevel(lvl.id as any)}
+                  className={`py-2 px-1 rounded-xl text-[11px] font-semibold border text-center transition-all flex flex-col items-center gap-0.5 ${
+                    energyLevel === lvl.id
+                      ? 'bg-primary text-on-primary border-primary shadow-xs'
+                      : 'bg-surface-container-low border-outline-variant/30 text-on-surface hover:bg-surface-container'
+                  }`}
+                  title={lvl.id}
+                >
+                  <span className="text-xs">{lvl.icon}</span>
+                  <span className="truncate w-full">{lvl.id}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Stress Level */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-bold text-on-background">Stress level:</span>
+            <div className="grid grid-cols-3 gap-1">
+              {[
+                { id: 'Low', icon: '🟢' },
+                { id: 'Moderate', icon: '🟡' },
+                { id: 'High', icon: '🔴' }
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setStressLevel(st.id as any)}
+                  className={`py-2 px-1.5 rounded-xl text-[11px] font-semibold border text-center transition-all flex items-center justify-center gap-1.5 ${
+                    stressLevel === st.id
+                      ? 'bg-primary text-on-primary border-primary shadow-xs'
+                      : 'bg-surface-container-low border-outline-variant/30 text-on-surface hover:bg-surface-container'
+                  }`}
+                >
+                  <span>{st.icon}</span>
+                  <span>{st.id}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Sleep Quality */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-bold text-on-background">Recent sleep:</span>
+            <div className="grid grid-cols-3 gap-1">
+              {[
+                { id: 'Good', icon: '🌙' },
+                { id: 'Okay', icon: '😐' },
+                { id: 'Poor', icon: '🥱' }
+              ].map((sl) => (
+                <button
+                  key={sl.id}
+                  type="button"
+                  onClick={() => setSleepQuality(sl.id as any)}
+                  className={`py-2 px-1.5 rounded-xl text-[11px] font-semibold border text-center transition-all flex items-center justify-center gap-1.5 ${
+                    sleepQuality === sl.id
+                      ? 'bg-primary text-on-primary border-primary shadow-xs'
+                      : 'bg-surface-container-low border-outline-variant/30 text-on-surface hover:bg-surface-container'
+                  }`}
+                >
+                  <span>{sl.icon}</span>
+                  <span>{sl.id}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Optional Written Reflection (Collapsible, purely optional per Part 20) */}
+        <div className="pt-2">
+          {!showOptionalNote ? (
+            <button
+              type="button"
+              onClick={() => setShowOptionalNote(true)}
+              className="text-xs text-on-surface-variant hover:text-primary font-medium flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined text-sm">add</span>
+              <span>Would you like to share anything in your own words? (Optional)</span>
+            </button>
+          ) : (
+            <div className="flex flex-col gap-2 animate-fadeIn">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-on-background">Personal reflection (Optional):</span>
+                <button
+                  type="button"
+                  onClick={() => setShowOptionalNote(false)}
+                  className="text-[11px] text-on-surface-variant hover:underline"
+                >
+                  Hide
+                </button>
+              </div>
+              <textarea
+                rows={2}
+                value={optionalNote}
+                onChange={(e) => setOptionalNote(e.target.value)}
+                placeholder="Share anything on your mind... (Completely private)"
+                className="w-full px-4 py-2.5 rounded-2xl bg-surface-container-low border border-outline-variant/40 text-xs text-on-background focus:outline-none focus:border-primary resize-none"
+              />
+            </div>
+          )}
+        </div>
       </section>
 
-      {/* Action Cards */}
+      {/* Your Wellbeing Journey (Non-Clinical Personal Trends) */}
+      <section className="bg-surface-container-lowest rounded-3xl p-6 shadow-sm border border-surface-variant/50 flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <h3 className="font-headline font-bold text-base text-on-background">
+              Your Wellbeing Journey 📊
+            </h3>
+            <span className="text-xs text-on-surface-variant">
+              Personal trends & equilibrium — visible only to you
+            </span>
+          </div>
+          <button
+            onClick={() => onNavigateTab('twin')}
+            className="text-xs text-primary font-semibold hover:underline"
+          >
+            Explore Twin →
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-1">
+            <span className="text-[11px] text-on-surface-variant font-medium">Mood Rhythm</span>
+            <span className="text-sm font-bold text-on-background flex items-center gap-1.5">
+              <span>{moodScore ? (moodScore >= 4 ? 'Positive' : moodScore === 3 ? 'Steady' : 'Tender') : 'Consistent'}</span>
+              <span className="text-xs text-primary">🌿</span>
+            </span>
+            <span className="text-[10px] text-on-surface-variant/80">Natural weekly baseline</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-1">
+            <span className="text-[11px] text-on-surface-variant font-medium">Energy Pattern</span>
+            <span className="text-sm font-bold text-on-background flex items-center gap-1.5">
+              <span>{energyLevel}</span>
+              <span className="text-xs text-secondary">⚡</span>
+            </span>
+            <span className="text-[10px] text-on-surface-variant/80">Daily vitality rhythm</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-1">
+            <span className="text-[11px] text-on-surface-variant font-medium">Stress Equilibrium</span>
+            <span className="text-sm font-bold text-on-background flex items-center gap-1.5">
+              <span>{stressLevel}</span>
+              <span className="text-xs text-tertiary">⚖️</span>
+            </span>
+            <span className="text-[10px] text-on-surface-variant/80">Workload balance</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-1">
+            <span className="text-[11px] text-on-surface-variant font-medium">Sleep Consistency</span>
+            <span className="text-sm font-bold text-on-background flex items-center gap-1.5">
+              <span>{sleepQuality}</span>
+              <span className="text-xs text-primary">🌙</span>
+            </span>
+            <span className="text-[10px] text-on-surface-variant/80">Restorative recovery</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Nivara Personal Context Suggestion */}
+      <section className="p-5 rounded-3xl bg-surface-container-low border border-primary/25 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-primary-fixed/40 flex items-center justify-center text-xl shrink-0">
+            💬
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-on-background">
+              Nivara Suggestion
+            </span>
+            <span className="text-xs text-on-surface-variant leading-relaxed">
+              {stressLevel === 'High'
+                ? "You mentioned higher stress today. Would you like to take a 2-minute breath pause or talk through what's pressing?"
+                : "Your space is calm and ready. Reach out to Nivara anytime you'd like a gentle sounding board."}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => onNavigateTab('talk')}
+            className="px-4 py-2 rounded-full bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 transition-colors shadow-sm"
+          >
+            Talk to Nivara
+          </button>
+          <button
+            onClick={onOpenBreathing}
+            className="px-3.5 py-2 rounded-full bg-surface-container hover:bg-surface-variant text-xs font-semibold text-on-surface transition-colors"
+          >
+            2-Min Reset
+          </button>
+        </div>
+      </section>
+
+      {/* Action Cards (Talk & Reset) */}
       <section className="grid grid-cols-1 md:grid-cols-12 gap-5">
-        <div className="md:col-span-8 bg-surface-container-lowest rounded-3xl p-7 shadow-sm border border-surface-variant/50 relative overflow-hidden flex flex-col justify-between min-h-[220px]">
+        <div className="md:col-span-8 bg-surface-container-lowest rounded-3xl p-7 shadow-sm border border-surface-variant/50 relative overflow-hidden flex flex-col justify-between min-h-[200px]">
           <div className="absolute -top-10 -right-10 w-48 h-48 bg-primary-fixed/30 rounded-full blur-2xl opacity-60 pointer-events-none" />
           <div className="relative z-10 flex flex-col gap-2 max-w-sm">
             <div className="w-10 h-10 rounded-2xl bg-surface-container flex items-center justify-center text-primary mb-1">
@@ -251,7 +511,7 @@ export const EmotionalCenter: React.FC<Props> = ({
         </div>
 
         {/* 2-Minute Reset Quick Tool */}
-        <div className="md:col-span-4 bg-surface-container-lowest rounded-3xl p-7 shadow-sm border border-surface-variant/50 flex flex-col justify-between min-h-[220px]">
+        <div className="md:col-span-4 bg-surface-container-lowest rounded-3xl p-7 shadow-sm border border-surface-variant/50 flex flex-col justify-between min-h-[200px]">
           <div className="flex flex-col gap-2">
             <span className="text-[10px] font-bold tracking-wider uppercase text-secondary">
               FOR YOU TODAY
@@ -272,29 +532,6 @@ export const EmotionalCenter: React.FC<Props> = ({
           </button>
         </div>
       </section>
-
-      {/* Twin Reflection Strip */}
-      {twinStatus && (
-        <section className="p-5 rounded-3xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🌱</span>
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-on-background">
-                Baseline: {twinStatus.currentPatternState || 'Balanced'} ({twinStatus.confidenceLevel} calibration)
-              </span>
-              <span className="text-[11px] text-on-surface-variant">
-                {twinStatus.insights?.[0] || 'Your baseline remains balanced this week.'}
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={() => onNavigateTab('twin')}
-            className="text-xs text-primary font-semibold hover:underline shrink-0"
-          >
-            View Twin →
-          </button>
-        </section>
-      )}
     </div>
   );
 };

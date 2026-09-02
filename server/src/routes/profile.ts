@@ -91,6 +91,35 @@ profileRouter.post('/onboarding', (req: AuthRequest, res) => {
     response_preference: supportPreferences?.responsePreference || 'Keep it simple'
   });
 
+  // 6. Enhanced Wellbeing Profile Sync
+  db.saveWellbeingProfile({
+    userId: wellbeingId,
+    preferences: {
+      communicationStyle: personalization?.communicationStyle || 'calm',
+      preferredLanguage: personalization?.language || 'en',
+      supportStyle: personalization?.supportStyle || 'balanced'
+    },
+    routine: {
+      typicalSleepHours: routine?.sleepDuration || 7,
+      studyPattern: routine?.studyPattern,
+      dailyRoutine: routine?.routineStructure
+    },
+    wellbeingPreferences: {
+      mainConcerns: stressors?.selectedTags || [],
+      preferredSupportMethods: supportPreferences?.supportTypes || []
+    },
+    baseline: {
+      initialMoodRange: 'Good',
+      stressPattern: academicContext?.pressure || 'Manageable',
+      energyPattern: 'Normal'
+    },
+    currentContext: {
+      situation: academicContext?.upcomingEvent || 'Managing regular classes'
+    },
+    onboardingCompleted: true,
+    updatedAt: new Date().toISOString()
+  });
+
   db.completeOnboarding(wellbeingId);
 
   res.json({
@@ -99,3 +128,46 @@ profileRouter.post('/onboarding', (req: AuthRequest, res) => {
     wellbeingId
   });
 });
+
+// GET Enhanced Wellbeing Profile
+profileRouter.get('/wellbeing', (req: AuthRequest, res) => {
+  const wellbeingId = req.user!.wellbeingId;
+  const profile = db.getWellbeingProfile(wellbeingId);
+  res.json({ profile: profile || null });
+});
+
+// PUT / Update Enhanced Wellbeing Profile
+profileRouter.put('/wellbeing', (req: AuthRequest, res) => {
+  const wellbeingId = req.user!.wellbeingId;
+  const existing = db.getWellbeingProfile(wellbeingId);
+
+  const updated = {
+    userId: wellbeingId,
+    preferences: {
+      ...existing?.preferences,
+      ...req.body.preferences
+    },
+    routine: {
+      ...existing?.routine,
+      ...req.body.routine
+    },
+    wellbeingPreferences: {
+      ...existing?.wellbeingPreferences,
+      ...req.body.wellbeingPreferences
+    },
+    baseline: {
+      ...existing?.baseline,
+      ...req.body.baseline
+    },
+    currentContext: {
+      ...existing?.currentContext,
+      ...req.body.currentContext
+    },
+    onboardingCompleted: true,
+    updatedAt: new Date().toISOString()
+  };
+
+  db.saveWellbeingProfile(updated);
+  res.json({ success: true, profile: updated });
+});
+

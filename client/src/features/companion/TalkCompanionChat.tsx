@@ -14,6 +14,9 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
   const [isListening, setIsListening] = useState(false);
   const [memories, setMemories] = useState<any[]>([]);
   const [showMemoryDrawer, setShowMemoryDrawer] = useState(false);
+  const [feedbackMap, setFeedbackMap] = useState<
+    Record<string, { helpful?: boolean; tag?: string; submitted?: boolean; showOptions?: boolean }>
+  >({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
@@ -75,7 +78,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
       try {
         recognitionRef.current.start();
         setIsListening(true);
-      } catch (e) {
+      } catch {
         setIsListening(false);
       }
     }
@@ -117,6 +120,29 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFeedbackThumb = async (messageId: string, helpful: boolean) => {
+    if (helpful) {
+      setFeedbackMap((prev) => ({
+        ...prev,
+        [messageId]: { helpful: true, submitted: true }
+      }));
+      await ApiClient.sendAIFeedback({ messageId, helpful: true });
+    } else {
+      setFeedbackMap((prev) => ({
+        ...prev,
+        [messageId]: { helpful: false, showOptions: true }
+      }));
+    }
+  };
+
+  const handleFeedbackTag = async (messageId: string, tag: string) => {
+    setFeedbackMap((prev) => ({
+      ...prev,
+      [messageId]: { helpful: false, tag, submitted: true, showOptions: false }
+    }));
+    await ApiClient.sendAIFeedback({ messageId, helpful: false, feedbackTag: tag });
   };
 
   const handleClearMemory = async () => {
@@ -186,7 +212,10 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {memories.map((m) => (
-                <span key={m.id} className="px-2.5 py-1 rounded-lg bg-surface-container-lowest text-[11px] text-on-surface border border-outline-variant/30">
+                <span
+                  key={m.id}
+                  className="px-2.5 py-1 rounded-lg bg-surface-container-lowest text-[11px] text-on-surface border border-outline-variant/30"
+                >
                   {m.memory_key}: {m.memory_value}
                 </span>
               ))}
@@ -226,6 +255,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
           const isUser = m.sender === 'user';
           const isRed = m.safety_tier === 'RED';
           const isYellow = m.safety_tier === 'YELLOW';
+          const fb = feedbackMap[m.id];
 
           return (
             <div
@@ -256,6 +286,57 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
                   </div>
                 )}
               </div>
+
+              {/* Part 11: Feedback Loop on Assistant Responses */}
+              {!isUser && !isRed && (
+                <div className="mt-1 flex flex-col gap-1 px-1">
+                  {!fb?.submitted && !fb?.showOptions && (
+                    <div className="flex items-center gap-2 text-[10px] text-on-surface-variant/70">
+                      <span>Was this helpful?</span>
+                      <button
+                        type="button"
+                        onClick={() => handleFeedbackThumb(m.id, true)}
+                        className="hover:text-primary transition-colors flex items-center gap-0.5"
+                        title="Helpful"
+                      >
+                        <span>👍</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleFeedbackThumb(m.id, false)}
+                        className="hover:text-error transition-colors flex items-center gap-0.5"
+                        title="Not helpful"
+                      >
+                        <span>👎</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {fb?.showOptions && !fb?.submitted && (
+                    <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl bg-surface-container-low border border-outline-variant/30 animate-fadeIn mt-1">
+                      <span className="text-[10px] text-on-surface-variant w-full">
+                        What could have been better?
+                      </span>
+                      {['Too generic', "Didn't understand me", 'Too long', 'Not helpful', 'Other'].map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => handleFeedbackTag(m.id, tag)}
+                          className="px-2 py-1 rounded-lg bg-surface-container text-[10px] font-medium text-on-surface hover:bg-surface-variant"
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {fb?.submitted && (
+                    <span className="text-[10px] text-primary italic">
+                      ✓ Thank you for your feedback
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -270,7 +351,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Bar with Voice Recognition Button */}
+      {/* Input Bar with Voice Recognition Button & Clean Composer */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -281,7 +362,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
         <button
           type="button"
           onClick={handleToggleVoice}
-          className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+          className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shrink-0 ${
             isListening
               ? 'bg-error text-on-error animate-pulse shadow-lg ring-4 ring-error/30'
               : 'bg-surface-container hover:bg-surface-variant text-on-surface'
@@ -304,7 +385,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
         <button
           type="submit"
           disabled={!input.trim() || loading}
-          className="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center hover:bg-primary-container transition-colors disabled:opacity-50 shadow-sm"
+          className="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center hover:bg-primary-container transition-colors disabled:opacity-50 shadow-sm shrink-0"
         >
           <span className="material-symbols-outlined text-lg">send</span>
         </button>

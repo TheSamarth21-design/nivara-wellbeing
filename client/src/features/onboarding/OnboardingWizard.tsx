@@ -9,57 +9,92 @@ export const OnboardingWizard: React.FC<Props> = ({ onComplete }) => {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  // Form State
-  const [preferredName, setPreferredName] = useState('');
-  const [ageRange, setAgeRange] = useState('20-22');
-  const [educationLevel, setEducationLevel] = useState('Undergraduate');
-  const [yearOfStudy, setYearOfStudy] = useState('3rd Year');
-  const [department, setDepartment] = useState('Computer Science & Engineering');
-
-  const [workload, setWorkload] = useState<'Low' | 'Moderate' | 'High' | 'Very high'>('Moderate');
-  const [upcomingEvent, setUpcomingEvent] = useState('Exams');
-  const [pressure, setPressure] = useState<'Manageable' | 'A little stressful' | 'Quite stressful' | 'Very difficult'>('A little stressful');
-
-  const [sleepDuration, setSleepDuration] = useState('6-7');
-  const [routineStructure, setRoutineStructure] = useState('Somewhat structured');
-  const [studyPattern, setStudyPattern] = useState('Evening');
-
-  const [selectedStressors, setSelectedStressors] = useState<string[]>(['Academic pressure', 'Exams']);
-  const [connectionLevel, setConnectionLevel] = useState('Mostly connected');
-  const [primaryTurnTo, setPrimaryTurnTo] = useState('Friend');
-
-  const [supportTypes, setSupportTypes] = useState<string[]>(['Someone listening', 'Quick calming exercises']);
-  const [responsePreference, setResponsePreference] = useState('Give practical suggestions');
-  const [primaryGoal, setPrimaryGoal] = useState('Handle academic stress');
+  // Section A: Communication Preferences
+  const [communicationStyle, setCommunicationStyle] = useState<'friendly' | 'calm' | 'direct' | 'motivational'>('calm');
+  const [supportStyle, setSupportStyle] = useState<'short' | 'balanced' | 'detailed'>('balanced');
   const [language, setLanguage] = useState<'en' | 'hi' | 'mr'>('en');
 
-  const toggleStressor = (item: string) => {
-    setSelectedStressors((prev) =>
-      prev.includes(item) ? prev.filter((s) => s !== item) : [...prev, item]
+  // Section B: Student Life Context
+  const [situation, setSituation] = useState<string>('Preparing for exams');
+
+  // Section C: Support Preferences (Multi-select chips)
+  const [supportMethods, setSupportMethods] = useState<string[]>([
+    'Practical solutions',
+    'Breaking problems into smaller steps'
+  ]);
+
+  // Section D: General Wellbeing Areas (Multi-select chips)
+  const [wellbeingAreas, setWellbeingAreas] = useState<string[]>([
+    'Stress management',
+    'Exam pressure'
+  ]);
+
+  // Section E: Sleep & Focus
+  const [typicalSleepHours, setTypicalSleepHours] = useState<string>('6-7 hrs');
+  const [studyPattern, setStudyPattern] = useState<string>('Evening');
+
+  const toggleMethod = (item: string) => {
+    setSupportMethods((prev) =>
+      prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
     );
   };
 
-  const toggleSupportType = (item: string) => {
-    setSupportTypes((prev) =>
-      prev.includes(item) ? prev.filter((s) => s !== item) : [...prev, item]
-    );
+  const toggleArea = (item: string) => {
+    if (item === 'Prefer not to answer') {
+      setWellbeingAreas(['Prefer not to answer']);
+      return;
+    }
+    setWellbeingAreas((prev) => {
+      const filtered = prev.filter((i) => i !== 'Prefer not to answer');
+      return filtered.includes(item) ? filtered.filter((i) => i !== item) : [...filtered, item];
+    });
   };
 
   const handleFinish = async () => {
     setLoading(true);
     try {
-      await ApiClient.submitOnboarding({
-        aboutYou: { preferredName: preferredName.trim() || 'Friend', ageRange, educationLevel, yearOfStudy, department },
-        academicContext: { workload, upcomingEvent, pressure },
-        routine: { sleepDuration, routineStructure, studyPattern },
-        stressors: { selectedTags: selectedStressors },
-        socialConnection: { connectionLevel, primaryTurnTo },
-        supportPreferences: { supportTypes, responsePreference },
-        personalization: { primaryGoal, language }
+      // 1. Submit enhanced wellbeing profile
+      await ApiClient.updateWellbeingProfile({
+        preferences: {
+          communicationStyle,
+          preferredLanguage: language,
+          supportStyle
+        },
+        routine: {
+          typicalSleepHours,
+          studyPattern,
+          dailyRoutine: 'Flexible'
+        },
+        wellbeingPreferences: {
+          mainConcerns: wellbeingAreas,
+          preferredSupportMethods: supportMethods
+        },
+        baseline: {
+          initialMoodRange: 'Good',
+          stressPattern: situation,
+          energyPattern: 'Normal'
+        },
+        currentContext: {
+          situation
+        },
+        onboardingCompleted: true
       });
+
+      // 2. Also mirror to legacy onboarding endpoint so all downstream views stay synchronized
+      await ApiClient.submitOnboarding({
+        aboutYou: { preferredName: 'Friend', ageRange: '20-22', educationLevel: 'Undergraduate', yearOfStudy: '3rd Year', department: 'General' },
+        academicContext: { workload: 'Moderate', upcomingEvent: situation, pressure: 'A little stressful' },
+        routine: { sleepDuration: typicalSleepHours, routineStructure: 'Somewhat structured', studyPattern },
+        stressors: { selectedTags: wellbeingAreas },
+        socialConnection: { connectionLevel: 'Mostly connected', primaryTurnTo: 'Friend' },
+        supportPreferences: { supportTypes: supportMethods, responsePreference: supportStyle },
+        personalization: { primaryGoal: wellbeingAreas[0] || 'Understand my wellbeing', language, communicationStyle, supportStyle }
+      });
+
       onComplete();
     } catch (err) {
-      console.error('Onboarding error:', err);
+      console.error('Onboarding submission error:', err);
+      onComplete();
     } finally {
       setLoading(false);
     }
@@ -67,15 +102,19 @@ export const OnboardingWizard: React.FC<Props> = ({ onComplete }) => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col justify-center items-center px-4 py-8">
-      <div className="max-w-xl w-full bg-surface-container-lowest rounded-3xl p-8 shadow-xl border border-surface-variant/60 flex flex-col gap-6">
-        {/* Progress Header */}
+      <div className="max-w-xl w-full bg-surface-container-lowest rounded-3xl p-6 sm:p-8 shadow-xl border border-surface-variant/60 flex flex-col gap-6 animate-fadeIn">
+        {/* Progress & Skip Header */}
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-primary uppercase tracking-widest">
-            Step {step} of 7 — Personalization Profile
-          </span>
+          <div className="flex flex-col">
+            <span className="text-[11px] font-bold text-primary uppercase tracking-wider">
+              Step {step} of 5 — Personalization
+            </span>
+            <span className="text-xs text-on-surface-variant">Non-clinical & completely optional</span>
+          </div>
+
           <div className="flex items-center gap-3">
             <div className="flex gap-1.5">
-              {[1, 2, 3, 4, 5, 6, 7].map((s) => (
+              {[1, 2, 3, 4, 5].map((s) => (
                 <div
                   key={s}
                   className={`h-1.5 rounded-full transition-all duration-300 ${
@@ -88,148 +127,268 @@ export const OnboardingWizard: React.FC<Props> = ({ onComplete }) => {
               type="button"
               onClick={handleFinish}
               disabled={loading}
-              className="text-xs text-on-surface-variant hover:text-primary hover:underline font-medium transition-colors ml-1"
-              title="Skip questions and enter dashboard"
+              className="text-xs text-on-surface-variant hover:text-primary font-semibold transition-colors ml-2"
+              title="Skip setup and go directly to dashboard"
             >
               Skip setup
             </button>
           </div>
         </div>
 
-        {/* STEP 1: About You */}
+        {/* STEP 1: Communication Preferences */}
         {step === 1 && (
-          <div className="flex flex-col gap-4 animate-fadeIn">
-            <div>
-              <h2 className="font-headline font-bold text-xl text-on-background">Let's get to know you 🌿</h2>
-              <p className="text-xs text-on-surface-variant">This creates your private profile. No real name required.</p>
+          <div className="flex flex-col gap-5 animate-fadeIn">
+            <div className="flex flex-col gap-1">
+              <h2 className="font-headline font-bold text-xl text-on-background">
+                How would you like Nivara to talk with you?
+              </h2>
+              <p className="text-xs text-on-surface-variant">
+                Let’s help Nivara understand what style feels most natural and supportive for you.
+              </p>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-on-surface mb-1">Preferred / Display Name</label>
-              <input
-                type="text"
-                placeholder="e.g. Aarav or Alex"
-                value={preferredName}
-                onChange={(e) => setPreferredName(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant/60 text-sm focus:outline-none focus:border-primary text-on-background"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-on-surface mb-1">Year of Study</label>
-                <select
-                  value={yearOfStudy}
-                  onChange={(e) => setYearOfStudy(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/60 text-xs text-on-background"
+
+            {/* Communication Style Selection Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { id: 'calm', icon: '🌿', title: 'Calm & Supportive', desc: 'Grounding, reassuring, gentle breathing pauses.' },
+                { id: 'friendly', icon: '😊', title: 'Friendly & Casual', desc: 'Warm, relatable, peer-like, easy conversation.' },
+                { id: 'direct', icon: '🎯', title: 'Direct & Practical', desc: 'Concise steps, clear action items, no fluff.' },
+                { id: 'motivational', icon: '🚀', title: 'Motivational', desc: 'Uplifting, empowering, focused on your strengths.' }
+              ].map((style) => (
+                <button
+                  key={style.id}
+                  type="button"
+                  onClick={() => setCommunicationStyle(style.id as any)}
+                  className={`p-4 rounded-2xl border text-left transition-all flex flex-col gap-1 ${
+                    communicationStyle === style.id
+                      ? 'bg-primary/10 border-primary ring-2 ring-primary/30 shadow-sm'
+                      : 'bg-surface-container-low border-outline-variant/40 hover:bg-surface-container'
+                  }`}
                 >
-                  <option>1st Year</option>
-                  <option>2nd Year</option>
-                  <option>3rd Year</option>
-                  <option>4th Year</option>
-                  <option>Postgraduate / PhD</option>
-                </select>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">{style.icon}</span>
+                    <span className="text-xs font-bold text-on-background">{style.title}</span>
+                  </div>
+                  <span className="text-[11px] text-on-surface-variant leading-tight">{style.desc}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Detail Preference */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-surface-variant/40">
+              <span className="text-xs font-bold text-on-background">How detailed do you prefer responses?</span>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'short', label: 'Short & simple' },
+                  { id: 'balanced', label: 'Balanced' },
+                  { id: 'detailed', label: 'Detailed' }
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setSupportStyle(item.id as any)}
+                    className={`py-2 px-3 rounded-xl text-xs font-medium border text-center transition-all ${
+                      supportStyle === item.id
+                        ? 'bg-primary text-on-primary border-primary shadow-sm'
+                        : 'bg-surface-container-low border-outline-variant/40 text-on-surface hover:bg-surface-container'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
-              <div>
-                <label className="block text-xs font-medium text-on-surface mb-1">Department</label>
-                <select
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/60 text-xs text-on-background"
-                >
-                  <option>Computer Science & Engineering</option>
-                  <option>Electronics & Comm</option>
-                  <option>Mechanical Engineering</option>
-                  <option>Management / Business</option>
-                  <option>Humanities & Sciences</option>
-                </select>
+            </div>
+
+            {/* Language Preference */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-surface-variant/40">
+              <span className="text-xs font-bold text-on-background">Which language do you prefer?</span>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'en', label: '🇬🇧 English' },
+                  { id: 'hi', label: '🇮🇳 Hindi (हिन्दी)' },
+                  { id: 'mr', label: '🚩 Marathi (मराठी)' }
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setLanguage(item.id as any)}
+                    className={`py-2 px-3 rounded-xl text-xs font-medium border text-center transition-all ${
+                      language === item.id
+                        ? 'bg-primary text-on-primary border-primary shadow-sm'
+                        : 'bg-surface-container-low border-outline-variant/40 text-on-surface hover:bg-surface-container'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
         )}
 
-        {/* STEP 2: Academic Context */}
+        {/* STEP 2: Student Life Context */}
         {step === 2 && (
-          <div className="flex flex-col gap-4 animate-fadeIn">
-            <div>
-              <h2 className="font-headline font-bold text-xl text-on-background">Academic Context 📚</h2>
-              <p className="text-xs text-on-surface-variant">Helps your Twin correlate stress with workload.</p>
+          <div className="flex flex-col gap-5 animate-fadeIn">
+            <div className="flex flex-col gap-1">
+              <h2 className="font-headline font-bold text-xl text-on-background">
+                What best describes your current situation?
+              </h2>
+              <p className="text-xs text-on-surface-variant">
+                This helps Nivara offer context-aware support without guessing your routine.
+              </p>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-on-surface mb-2">Current Academic Workload</label>
-              <div className="grid grid-cols-4 gap-2">
-                {(['Low', 'Moderate', 'High', 'Very high'] as const).map((lvl) => (
-                  <button
-                    key={lvl}
-                    type="button"
-                    onClick={() => setWorkload(lvl)}
-                    className={`py-2.5 rounded-xl text-xs font-medium border transition-all ${
-                      workload === lvl
-                        ? 'bg-primary text-on-primary border-primary font-semibold shadow-sm'
-                        : 'bg-surface-container-low text-on-surface border-outline-variant/40'
-                    }`}
-                  >
-                    {lvl}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-on-surface mb-2">Upcoming Major Event</label>
-              <select
-                value={upcomingEvent}
-                onChange={(e) => setUpcomingEvent(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant/60 text-xs text-on-background"
-              >
-                <option>No major event</option>
-                <option>Exams</option>
-                <option>Assignments / Submissions</option>
-                <option>Project deadline</option>
-                <option>Placement / Job Interview</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-on-surface mb-2">Academic Pressure Level</label>
-              <div className="grid grid-cols-2 gap-2">
-                {(['Manageable', 'A little stressful', 'Quite stressful', 'Very difficult'] as const).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPressure(p)}
-                    className={`py-2.5 px-3 rounded-xl text-xs text-left border transition-all ${
-                      pressure === p
-                        ? 'bg-secondary text-on-secondary border-secondary font-semibold shadow-sm'
-                        : 'bg-surface-container-low text-on-surface border-outline-variant/40'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
+
+            <div className="flex flex-col gap-2.5">
+              {[
+                { id: 'Managing regular classes', icon: '📚', label: 'Managing regular classes & assignments' },
+                { id: 'Preparing for exams', icon: '📝', label: 'Preparing for upcoming exams / submissions' },
+                { id: 'Adjusting to college life', icon: '🏫', label: 'Adjusting to hostel or campus life' },
+                { id: 'Managing a heavy workload', icon: '⏳', label: 'Managing a heavy or congested workload' },
+                { id: 'Balancing studies & responsibilities', icon: '⚖️', label: 'Balancing studies and personal responsibilities' },
+                { id: 'Something else', icon: '✨', label: 'Something else' },
+                { id: 'Prefer not to say', icon: '🔒', label: 'Prefer not to say' }
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSituation(item.id)}
+                  className={`p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between ${
+                    situation === item.id
+                      ? 'bg-primary/10 border-primary ring-2 ring-primary/20 shadow-sm'
+                      : 'bg-surface-container-low border-outline-variant/40 hover:bg-surface-container'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">{item.icon}</span>
+                    <span className="text-xs font-semibold text-on-background">{item.label}</span>
+                  </div>
+                  {situation === item.id && (
+                    <span className="material-symbols-outlined text-primary text-sm font-bold">
+                      check_circle
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
           </div>
         )}
 
-        {/* STEP 3: Routine (Optional) */}
+        {/* STEP 3: Support Preferences */}
         {step === 3 && (
-          <div className="flex flex-col gap-4 animate-fadeIn">
-            <div>
-              <div className="flex items-center justify-between">
-                <h2 className="font-headline font-bold text-xl text-on-background">Daily Routine ⏰</h2>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-semibold">
-                  Optional
-                </span>
-              </div>
-              <p className="text-xs text-on-surface-variant">Skip anything you're not comfortable sharing.</p>
+          <div className="flex flex-col gap-5 animate-fadeIn">
+            <div className="flex flex-col gap-1">
+              <h2 className="font-headline font-bold text-xl text-on-background">
+                When you're feeling stressed, what usually helps?
+              </h2>
+              <p className="text-xs text-on-surface-variant">
+                Select any methods that tend to lighten your mind (multiple choices welcome).
+              </p>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-on-surface mb-1">Average Nightly Sleep</label>
-              <div className="grid grid-cols-5 gap-1.5">
-                {['<5 hrs', '5-6 hrs', '6-7 hrs', '7-8 hrs', '8+ hrs'].map((dur) => (
+
+            <div className="flex flex-wrap gap-2.5">
+              {[
+                { id: 'Talking things through', icon: '💬' },
+                { id: 'Practical solutions', icon: '💡' },
+                { id: 'Breaking problems into smaller steps', icon: '🧩' },
+                { id: 'Relaxation or breathing exercises', icon: '🫁' },
+                { id: 'Motivation and encouragement', icon: '🌟' },
+                { id: 'Time alone to think', icon: '🧘' },
+                { id: 'Talking to someone I trust', icon: '🤝' },
+                { id: 'Something else', icon: '🔍' }
+              ].map((item) => {
+                const isSelected = supportMethods.includes(item.id);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => toggleMethod(item.id)}
+                    className={`px-4 py-2.5 rounded-2xl border text-xs font-semibold transition-all flex items-center gap-2 ${
+                      isSelected
+                        ? 'bg-primary text-on-primary border-primary shadow-sm ring-2 ring-primary/20'
+                        : 'bg-surface-container-low border-outline-variant/40 text-on-surface hover:bg-surface-container'
+                    }`}
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.id}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4: General Wellbeing Areas */}
+        {step === 4 && (
+          <div className="flex flex-col gap-5 animate-fadeIn">
+            <div className="flex flex-col gap-1">
+              <h2 className="font-headline font-bold text-xl text-on-background">
+                Which areas would you like Nivara to help with?
+              </h2>
+              <p className="text-xs text-on-surface-variant">
+                Non-clinical topics. Select as many as you’d like.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: 'Stress management', icon: '🛡️' },
+                { id: 'Exam pressure', icon: '📖' },
+                { id: 'Feeling overwhelmed', icon: '🌊' },
+                { id: 'Sleep and routine', icon: '🌙' },
+                { id: 'Loneliness', icon: '🍂' },
+                { id: 'Motivation', icon: '⚡' },
+                { id: 'Peer pressure', icon: '👥' },
+                { id: 'Relationships', icon: '💛' },
+                { id: 'Career concerns', icon: '🧭' },
+                { id: 'Time management', icon: '⏰' },
+                { id: 'Emotional wellbeing', icon: '🌿' },
+                { id: 'Prefer not to answer', icon: '🔒' }
+              ].map((item) => {
+                const isSelected = wellbeingAreas.includes(item.id);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => toggleArea(item.id)}
+                    className={`px-3.5 py-2.5 rounded-2xl border text-xs font-semibold transition-all flex items-center gap-2 ${
+                      isSelected
+                        ? 'bg-primary text-on-primary border-primary shadow-sm ring-2 ring-primary/20'
+                        : 'bg-surface-container-low border-outline-variant/40 text-on-surface hover:bg-surface-container'
+                    }`}
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.id}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* STEP 5: Routine & Sleep Baseline */}
+        {step === 5 && (
+          <div className="flex flex-col gap-5 animate-fadeIn">
+            <div className="flex flex-col gap-1">
+              <h2 className="font-headline font-bold text-xl text-on-background">
+                A quick baseline for your sleep & focus
+              </h2>
+              <p className="text-xs text-on-surface-variant">
+                Helps your Digital Twin understand restorative recovery patterns.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <span className="text-xs font-bold text-on-background">Typical sleep duration:</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {['< 5 hrs', '5-6 hrs', '6-7 hrs', '8+ hrs'].map((dur) => (
                   <button
                     key={dur}
                     type="button"
-                    onClick={() => setSleepDuration(dur)}
-                    className={`py-2 rounded-xl text-xs border transition-all ${
-                      sleepDuration === dur ? 'bg-primary text-on-primary font-semibold' : 'bg-surface-container-low'
+                    onClick={() => setTypicalSleepHours(dur)}
+                    className={`py-3 px-3 rounded-2xl border text-xs font-bold text-center transition-all ${
+                      typicalSleepHours === dur
+                        ? 'bg-primary text-on-primary border-primary shadow-sm'
+                        : 'bg-surface-container-low border-outline-variant/40 text-on-surface hover:bg-surface-container'
                     }`}
                   >
                     {dur}
@@ -237,245 +396,78 @@ export const OnboardingWizard: React.FC<Props> = ({ onComplete }) => {
                 ))}
               </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-on-surface mb-1">Study Rhythm</label>
-              <select
-                value={studyPattern}
-                onChange={(e) => setStudyPattern(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant/60 text-xs text-on-background"
-              >
-                <option>Morning</option>
-                <option>Afternoon</option>
-                <option>Evening</option>
-                <option>Late night</option>
-                <option>Changes frequently</option>
-              </select>
-            </div>
-          </div>
-        )}
 
-        {/* STEP 4: Current Stressors */}
-        {step === 4 && (
-          <div className="flex flex-col gap-4 animate-fadeIn">
-            <div>
-              <h2 className="font-headline font-bold text-xl text-on-background">Current Stressors 🌧️</h2>
-              <p className="text-xs text-on-surface-variant">Select whatever applies to you right now.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {[
-                'Academic pressure',
-                'Exams',
-                'Friend/social issues',
-                'Home/family',
-                'Financial concerns',
-                'Sleep/routine',
-                'Future/career',
-                'Relationships',
-                'College environment',
-                'Homesickness',
-                'Prefer not to say'
-              ].map((item) => {
-                const isSelected = selectedStressors.includes(item);
-                return (
+            <div className="flex flex-col gap-3 pt-3 border-t border-surface-variant/40">
+              <span className="text-xs font-bold text-on-background">When do you naturally focus best?</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { id: 'Early morning', icon: '🌅' },
+                  { id: 'Afternoon', icon: '☀️' },
+                  { id: 'Evening', icon: '🌆' },
+                  { id: 'Night owl', icon: '🌙' }
+                ].map((item) => (
                   <button
-                    key={item}
+                    key={item.id}
                     type="button"
-                    onClick={() => toggleStressor(item)}
-                    className={`px-3.5 py-2 rounded-full text-xs font-medium border transition-all ${
-                      isSelected
-                        ? 'bg-primary-fixed text-on-primary-fixed border-primary font-semibold shadow-sm'
-                        : 'bg-surface-container-low text-on-surface border-outline-variant/40 hover:bg-surface-container'
+                    onClick={() => setStudyPattern(item.id)}
+                    className={`py-3 px-2 rounded-2xl border text-xs font-semibold text-center transition-all flex flex-col items-center gap-1 ${
+                      studyPattern === item.id
+                        ? 'bg-primary text-on-primary border-primary shadow-sm'
+                        : 'bg-surface-container-low border-outline-variant/40 text-on-surface hover:bg-surface-container'
                     }`}
                   >
-                    {isSelected ? '✓ ' : '+ '} {item}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* STEP 5: Social Connection */}
-        {step === 5 && (
-          <div className="flex flex-col gap-4 animate-fadeIn">
-            <div>
-              <h2 className="font-headline font-bold text-xl text-on-background">Social Connection 🤝</h2>
-              <p className="text-xs text-on-surface-variant">Understanding your support network.</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-on-surface mb-2">How connected do you usually feel?</label>
-              <div className="grid grid-cols-2 gap-2">
-                {['Very connected', 'Mostly connected', 'Sometimes isolated', 'Often isolated'].map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setConnectionLevel(c)}
-                    className={`py-2.5 px-3 rounded-xl text-xs border text-left transition-all ${
-                      connectionLevel === c ? 'bg-primary text-on-primary font-semibold' : 'bg-surface-container-low'
-                    }`}
-                  >
-                    {c}
+                    <span className="text-lg">{item.icon}</span>
+                    <span>{item.id}</span>
                   </button>
                 ))}
               </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-on-surface mb-2">When things get difficult, who do you turn to?</label>
-              <select
-                value={primaryTurnTo}
-                onChange={(e) => setPrimaryTurnTo(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant/60 text-xs text-on-background"
-              >
-                <option>Friend</option>
-                <option>Family</option>
-                <option>Teacher / Mentor</option>
-                <option>Counsellor</option>
-                <option>Partner</option>
-                <option>Nobody</option>
-                <option>Prefer not to say</option>
-              </select>
-            </div>
-          </div>
-        )}
 
-        {/* STEP 6: Support Preferences */}
-        {step === 6 && (
-          <div className="flex flex-col gap-4 animate-fadeIn">
-            <div>
-              <h2 className="font-headline font-bold text-xl text-on-background">Support Preferences 🕊️</h2>
-              <p className="text-xs text-on-surface-variant">What kind of support feels comfortable to you?</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {[
-                'Someone listening',
-                'Quick calming exercises',
-                'Study/academic planning',
-                'Peer support',
-                'Counsellor support',
-                'Career/future planning',
-                'Self-guided resources'
-              ].map((item) => {
-                const isSelected = supportTypes.includes(item);
-                return (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => toggleSupportType(item)}
-                    className={`px-3.5 py-2 rounded-full text-xs font-medium border transition-all ${
-                      isSelected
-                        ? 'bg-primary text-on-primary border-primary font-semibold shadow-sm'
-                        : 'bg-surface-container-low text-on-surface border-outline-variant/40'
-                    }`}
-                  >
-                    {isSelected ? '✓ ' : '+ '} {item}
-                  </button>
-                );
-              })}
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-on-surface mb-1">When having a difficult day, how should Nivara respond?</label>
-              <select
-                value={responsePreference}
-                onChange={(e) => setResponsePreference(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant/60 text-xs text-on-background"
-              >
-                <option>Keep it simple</option>
-                <option>Give practical suggestions</option>
-                <option>Let me talk first</option>
-                <option>Show support options</option>
-                <option>A mix</option>
-              </select>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 7: Personalization & Language */}
-        {step === 7 && (
-          <div className="flex flex-col gap-4 animate-fadeIn">
-            <div>
-              <h2 className="font-headline font-bold text-xl text-on-background">Your space is ready 🌿</h2>
-              <p className="text-xs text-on-surface-variant">Set your primary focus and language preference.</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-on-surface mb-1">What would you like Nivara to help you with most?</label>
-              <select
-                value={primaryGoal}
-                onChange={(e) => setPrimaryGoal(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant/60 text-xs text-on-background"
-              >
-                <option>Understand my wellbeing patterns</option>
-                <option>Handle academic stress</option>
-                <option>Talk when overwhelmed</option>
-                <option>Build better routines</option>
-                <option>Find human counsellor support</option>
-                <option>Feel less alone</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-on-surface mb-1">Language</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['en', 'hi', 'mr'] as const).map((l) => (
-                  <button
-                    key={l}
-                    type="button"
-                    onClick={() => setLanguage(l)}
-                    className={`py-2.5 rounded-xl text-xs font-medium border transition-all ${
-                      language === l ? 'bg-primary text-on-primary font-semibold' : 'bg-surface-container-low'
-                    }`}
-                  >
-                    {l === 'en' ? 'English' : l === 'hi' ? 'हिंदी (Hindi)' : 'मराठी (Marathi)'}
-                  </button>
-                ))}
+            <div className="p-4 rounded-2xl bg-surface-container-low border border-primary/20 flex items-center gap-3 mt-2">
+              <span className="text-2xl">🌿</span>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-on-background">Your space is ready</span>
+                <span className="text-[11px] text-on-surface-variant">
+                  You can change these preferences at any time from your Privacy & Settings center.
+                </span>
               </div>
-            </div>
-            <div className="p-4 rounded-2xl bg-surface-container text-xs text-on-surface-variant leading-relaxed">
-              🌿 Your Digital Wellbeing Twin will now model your natural baseline over time without clinical diagnoses or universal judgment.
             </div>
           </div>
         )}
 
         {/* Navigation Buttons */}
-        <div className="flex items-center justify-between pt-4 border-t border-surface-variant/40">
+        <div className="flex items-center justify-between pt-4 border-t border-surface-variant/60">
           {step > 1 ? (
             <button
               type="button"
               onClick={() => setStep((s) => s - 1)}
-              className="px-5 py-2.5 rounded-full bg-surface-container text-xs font-semibold text-on-surface hover:bg-surface-variant transition-colors"
+              className="px-5 py-2.5 rounded-full border border-outline-variant/60 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors"
             >
-              ← Back
+              Back
             </button>
-          ) : <div />}
+          ) : (
+            <div />
+          )}
 
-          <div className="flex items-center gap-2">
-            {step < 7 && (
-              <button
-                type="button"
-                onClick={() => setStep((s) => s + 1)}
-                className="px-4 py-2.5 rounded-full text-xs font-semibold text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors"
-              >
-                Skip question
-              </button>
-            )}
-
-            {step < 7 ? (
-              <button
-                type="button"
-                onClick={() => setStep((s) => s + 1)}
-                className="px-6 py-2.5 rounded-full bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-colors shadow-sm"
-              >
-                Continue →
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleFinish}
-                disabled={loading}
-                className="px-8 py-3 rounded-full bg-primary text-on-primary text-xs font-bold hover:bg-primary-container transition-colors shadow-md disabled:opacity-50"
-              >
-                {loading ? 'Entering Space...' : 'Enter My Space 🌿'}
-              </button>
-            )}
-          </div>
+          {step < 5 ? (
+            <button
+              type="button"
+              onClick={() => setStep((s) => s + 1)}
+              className="px-6 py-2.5 rounded-full bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 transition-colors shadow-sm flex items-center gap-1"
+            >
+              <span>Continue</span>
+              <span className="material-symbols-outlined text-sm">arrow_forward</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleFinish}
+              disabled={loading}
+              className="px-6 py-2.5 rounded-full bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 transition-colors shadow-md flex items-center gap-1 disabled:opacity-50"
+            >
+              <span>{loading ? 'Initializing...' : 'Enter My Wellbeing Space 🌿'}</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

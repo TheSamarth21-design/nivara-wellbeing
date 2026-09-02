@@ -15,11 +15,28 @@ export const PrivacyCenterView: React.FC<Props> = ({ onLoggedOut }) => {
     consent_campus_analytics: true,
     consent_ai_memory: true
   });
+
+  const [researchConsent, setResearchConsent] = useState<{
+    contributeToImprovement: boolean;
+    allowDeidentifiedFeedback: boolean;
+    allowDeidentifiedUsageAnalytics: boolean;
+    allowPrivateChatForTraining: false;
+  }>({
+    contributeToImprovement: false,
+    allowDeidentifiedFeedback: false,
+    allowDeidentifiedUsageAnalytics: false,
+    allowPrivateChatForTraining: false
+  });
+
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     ApiClient.getConsents().then((res) => {
       if (res.consents) setConsents(res.consents);
+    });
+
+    ApiClient.getResearchConsent().then((c) => {
+      if (c) setResearchConsent(c);
     });
   }, []);
 
@@ -27,6 +44,18 @@ export const PrivacyCenterView: React.FC<Props> = ({ onLoggedOut }) => {
     const updated = { ...consents, [key]: !consents[key] };
     setConsents(updated);
     await ApiClient.updateConsents(updated);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleResearchToggle = async (key: 'contributeToImprovement' | 'allowDeidentifiedFeedback' | 'allowDeidentifiedUsageAnalytics') => {
+    const updated = {
+      ...researchConsent,
+      [key]: !researchConsent[key],
+      allowPrivateChatForTraining: false as const
+    };
+    setResearchConsent(updated);
+    await ApiClient.updateResearchConsent(updated);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -78,7 +107,7 @@ export const PrivacyCenterView: React.FC<Props> = ({ onLoggedOut }) => {
             <button
               type="button"
               onClick={() => handleToggle(item.key)}
-              className={`w-12 h-6 rounded-full transition-colors relative flex items-center px-1 ${
+              className={`w-12 h-6 rounded-full transition-colors relative flex items-center px-1 shrink-0 ${
                 consents[item.key] ? 'bg-primary' : 'bg-surface-variant'
               }`}
             >
@@ -90,6 +119,77 @@ export const PrivacyCenterView: React.FC<Props> = ({ onLoggedOut }) => {
             </button>
           </div>
         ))}
+      </div>
+
+      {/* Parts 9 & 10: Help Improve Nivara (Research & Model Quality Consent) */}
+      <div className="bg-surface-container-lowest rounded-3xl p-6 shadow-sm border border-surface-variant/60 flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <h2 className="font-headline font-bold text-sm text-on-background flex items-center gap-2">
+              <span>Help Improve Nivara (Research & System Quality)</span>
+              <span className="text-[10px] bg-secondary/15 text-secondary px-2 py-0.5 rounded-full font-semibold">
+                Opt-in Only
+              </span>
+            </h2>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              Choose whether to share de-identified feedback to help our researchers evaluate system quality.
+            </p>
+          </div>
+        </div>
+
+        {/* Training Guarantee Alert */}
+        <div className="p-3.5 rounded-2xl bg-primary/10 border border-primary/25 flex items-center gap-3">
+          <span className="text-lg">🔒</span>
+          <span className="text-[11px] text-on-surface leading-tight font-medium">
+            <strong>Private Chat Guarantee:</strong> Student private conversation content is strictly confidential and <strong>never</strong> automatically used for training AI models.
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center justify-between p-3.5 rounded-2xl bg-surface-container-low border border-outline-variant/30">
+            <div className="flex flex-col pr-4">
+              <span className="text-xs font-bold text-on-background">Contribute to Wellbeing Research</span>
+              <span className="text-[11px] text-on-surface-variant leading-tight mt-0.5">
+                Permits researchers to include anonymized evaluation benchmarks in model quality testing.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleResearchToggle('contributeToImprovement')}
+              className={`w-12 h-6 rounded-full transition-colors relative flex items-center px-1 shrink-0 ${
+                researchConsent.contributeToImprovement ? 'bg-primary' : 'bg-surface-variant'
+              }`}
+            >
+              <div
+                className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                  researchConsent.contributeToImprovement ? 'translate-x-6' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between p-3.5 rounded-2xl bg-surface-container-low border border-outline-variant/30">
+            <div className="flex flex-col pr-4">
+              <span className="text-xs font-bold text-on-background">De-identified Response Feedback</span>
+              <span className="text-[11px] text-on-surface-variant leading-tight mt-0.5">
+                Shares 👍 / 👎 ratings and tags without your identity or chat history to fix unhelpful replies.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleResearchToggle('allowDeidentifiedFeedback')}
+              className={`w-12 h-6 rounded-full transition-colors relative flex items-center px-1 shrink-0 ${
+                researchConsent.allowDeidentifiedFeedback ? 'bg-primary' : 'bg-surface-variant'
+              }`}
+            >
+              <div
+                className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                  researchConsent.allowDeidentifiedFeedback ? 'translate-x-6' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Data Export & Wipe Actions */}

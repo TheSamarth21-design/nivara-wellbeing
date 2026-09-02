@@ -46,3 +46,28 @@ privacyRouter.delete('/purge', (req: AuthRequest, res) => {
     message: 'Your personal data, wellbeing profile, check-ins, and identity mapping have been completely purged from the system.'
   });
 });
+
+// GET Research & Model Quality Consent (Default OFF, Private Chat Training False)
+privacyRouter.get('/research-consent', (req: AuthRequest, res) => {
+  const wellbeingId = req.user!.wellbeingId;
+  const consent = db.getResearchConsent(wellbeingId);
+  res.json({ consent });
+});
+
+// PUT / Update Research Consent
+privacyRouter.put('/research-consent', (req: AuthRequest, res) => {
+  const wellbeingId = req.user!.wellbeingId;
+  const existing = db.getResearchConsent(wellbeingId);
+
+  const updated = {
+    ...existing,
+    ...req.body,
+    userId: wellbeingId,
+    allowPrivateChatForTraining: false as const,
+    updatedAt: new Date().toISOString()
+  };
+
+  db.saveResearchConsent(updated);
+  res.json({ success: true, consent: updated });
+});
+

@@ -92,3 +92,69 @@ export interface CrisisResourceItem {
   urgent: boolean;
   languages: string[];
 }
+
+export interface StudentWellbeingProfile {
+  userId: string;
+  preferences: {
+    communicationStyle?: 'friendly' | 'calm' | 'direct' | 'motivational';
+    preferredLanguage?: 'en' | 'hi' | 'mr';
+    supportStyle?: 'short' | 'balanced' | 'detailed';
+  };
+  routine: {
+    typicalSleepHours?: number | string;
+    studyPattern?: string;
+    dailyRoutine?: string;
+  };
+  wellbeingPreferences: {
+    mainConcerns?: string[];
+    preferredSupportMethods?: string[];
+  };
+  baseline: {
+    initialMoodRange?: string;
+    stressPattern?: string;
+    energyPattern?: string;
+  };
+  currentContext?: {
+    situation?: string;
+  };
+  onboardingCompleted: boolean;
+  updatedAt: string;
+}
+
+export interface EnhancedCheckinItem {
+  id: string;
+  wellbeing_id: string;
+  mood_tier: string;
+  mood_score: number;
+  energy_level?: 'High' | 'Normal' | 'Low' | 'Very Low';
+  stress_level?: 'Low' | 'Moderate' | 'High';
+  sleep_quality?: 'Good' | 'Okay' | 'Poor';
+  feeling_tags: string[];
+  note?: string;
+  created_at: string;
+}
+
+export interface AdaptiveQuestionItem {
+  id: string;
+  trigger: 'HIGH_STRESS' | 'LOW_ENERGY' | 'POOR_SLEEP';
+  question: string;
+  options: string[];
+}
+
+export interface AIFeedbackPayload {
+  messageId?: string;
+  helpful: boolean;
+  feedbackTag?: string;
+  comment?: string;
+}
+
+export interface ResearchConsentData {
+  userId: string;
+  contributeToImprovement: boolean;
+  allowDeidentifiedFeedback: boolean;
+  allowDeidentifiedUsageAnalytics: boolean;
+  allowPrivateChatForTraining: false;
+  consentVersion: string;
+  updatedAt: string;
+}
+

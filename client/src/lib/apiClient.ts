@@ -83,7 +83,37 @@ export class ApiClient {
     }
   }
 
-  public static async submitCheckin(data: { moodTier: string; feelingTags?: string[]; note?: string }) {
+  // Enhanced Wellbeing Profile
+  public static async getWellbeingProfile() {
+    try {
+      const res = await this.request('/profile/wellbeing');
+      return res.profile;
+    } catch {
+      return null;
+    }
+  }
+
+  public static async updateWellbeingProfile(profile: any) {
+    try {
+      return await this.request('/profile/wellbeing', {
+        method: 'PUT',
+        body: JSON.stringify(profile)
+      });
+    } catch {
+      return { success: true, profile };
+    }
+  }
+
+  // Enhanced Check-ins
+  public static async submitEnhancedCheckin(data: {
+    moodScore: number;
+    moodTier?: string;
+    energyLevel?: string;
+    stressLevel?: string;
+    sleepQuality?: string;
+    feelingTags?: string[];
+    note?: string;
+  }) {
     try {
       return await this.request('/checkins', {
         method: 'POST',
@@ -99,6 +129,15 @@ export class ApiClient {
           created_at: new Date().toISOString()
         }
       };
+    }
+  }
+
+  public static async getAdaptiveQuestion() {
+    try {
+      const res = await this.request('/checkins/adaptive');
+      return res.adaptiveQuestion;
+    } catch {
+      return null;
     }
   }
 
@@ -177,6 +216,22 @@ export class ApiClient {
         reply,
         safetyTier: 'GREEN'
       };
+    }
+  }
+
+  public static async sendAIFeedback(data: {
+    messageId?: string;
+    helpful: boolean;
+    feedbackTag?: string;
+    comment?: string;
+  }) {
+    try {
+      return await this.request('/companion/feedback', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+    } catch {
+      return { success: true };
     }
   }
 
@@ -375,6 +430,34 @@ export class ApiClient {
       });
     } catch {
       return { success: true, consents };
+    }
+  }
+
+  public static async getResearchConsent() {
+    try {
+      const res = await this.request('/privacy/research-consent');
+      return res.consent;
+    } catch {
+      return {
+        userId: this.wellbeingId,
+        contributeToImprovement: false,
+        allowDeidentifiedFeedback: false,
+        allowDeidentifiedUsageAnalytics: false,
+        allowPrivateChatForTraining: false,
+        consentVersion: '1.0',
+        updatedAt: new Date().toISOString()
+      };
+    }
+  }
+
+  public static async updateResearchConsent(consent: any) {
+    try {
+      return await this.request('/privacy/research-consent', {
+        method: 'PUT',
+        body: JSON.stringify(consent)
+      });
+    } catch {
+      return { success: true, consent };
     }
   }
 

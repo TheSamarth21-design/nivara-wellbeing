@@ -108,6 +108,74 @@ export interface AIMemoryItem {
   created_at: string;
 }
 
+export interface StudentWellbeingProfile {
+  userId: string;
+  preferences: {
+    communicationStyle?: 'friendly' | 'calm' | 'direct' | 'motivational';
+    preferredLanguage?: 'en' | 'hi' | 'mr';
+    supportStyle?: 'short' | 'balanced' | 'detailed';
+  };
+  routine: {
+    typicalSleepHours?: number | string;
+    studyPattern?: string;
+    dailyRoutine?: string;
+  };
+  wellbeingPreferences: {
+    mainConcerns?: string[];
+    preferredSupportMethods?: string[];
+  };
+  baseline: {
+    initialMoodRange?: string;
+    stressPattern?: string;
+    energyPattern?: string;
+  };
+  currentContext?: {
+    situation?: string;
+  };
+  onboardingCompleted: boolean;
+  updatedAt: string;
+}
+
+export interface EnhancedWellbeingCheckin {
+  id: string;
+  wellbeing_id: string;
+  mood_tier: string;
+  mood_score: number; // 1-5
+  energy_level?: 'High' | 'Normal' | 'Low' | 'Very Low';
+  stress_level?: 'Low' | 'Moderate' | 'High';
+  sleep_quality?: 'Good' | 'Okay' | 'Poor';
+  feeling_tags: string[];
+  note?: string;
+  created_at: string;
+}
+
+export interface AdaptiveCheckinQuestion {
+  id: string;
+  trigger: 'HIGH_STRESS' | 'LOW_ENERGY' | 'POOR_SLEEP';
+  question: string;
+  options: string[];
+}
+
+export interface AIFeedbackItem {
+  id: string;
+  wellbeing_id: string;
+  message_id?: string;
+  helpful: boolean;
+  feedback_tag?: string;
+  comment?: string;
+  created_at: string;
+}
+
+export interface ResearchConsent {
+  userId: string;
+  contributeToImprovement: boolean;
+  allowDeidentifiedFeedback: boolean;
+  allowDeidentifiedUsageAnalytics: boolean;
+  allowPrivateChatForTraining: false;
+  consentVersion: string;
+  updatedAt: string;
+}
+
 export interface SupportRequest {
   id: string;
   wellbeing_id: string;
@@ -186,6 +254,12 @@ export class DatabaseAdapter {
   private followups: SupportFollowup[] = [];
   private simulations: SimulationHistoryItem[] = [];
   private auditLogs: AuditLogItem[] = [];
+
+  // Enhanced Phase 1 Personalization & Research Collections
+  private wellbeingProfiles: Map<string, StudentWellbeingProfile> = new Map();
+  private enhancedCheckins: EnhancedWellbeingCheckin[] = [];
+  private aiFeedbacks: AIFeedbackItem[] = [];
+  private researchConsents: Map<string, ResearchConsent> = new Map();
 
   constructor() {
     this.seedInstitutionalAccounts();
@@ -558,9 +632,144 @@ export class DatabaseAdapter {
     this.aiMemories = this.aiMemories.filter(m => m.wellbeing_id !== wellbeingId);
     this.simulations = this.simulations.filter(s => s.wellbeing_id !== wellbeingId);
     this.followups = this.followups.filter(f => f.wellbeing_id !== wellbeingId);
+    this.wellbeingProfiles.delete(wellbeingId);
+    this.enhancedCheckins = this.enhancedCheckins.filter(c => c.wellbeing_id !== wellbeingId);
+    this.aiFeedbacks = this.aiFeedbacks.filter(f => f.wellbeing_id !== wellbeingId);
+    this.researchConsents.delete(wellbeingId);
 
     this.logAudit(wellbeingId, 'USER_DATA_PURGED');
     return true;
+  }
+
+  // --- Enhanced Phase 1 Personalization Methods ---
+  public getWellbeingProfile(wellbeingId: string): StudentWellbeingProfile | undefined {
+    return this.wellbeingProfiles.get(wellbeingId);
+  }
+
+  public saveWellbeingProfile(profile: StudentWellbeingProfile): void {
+    this.wellbeingProfiles.set(profile.userId, profile);
+    this.logAudit(profile.userId, 'WELLBEING_PROFILE_SAVED');
+  }
+
+  public addEnhancedCheckin(checkin: Omit<EnhancedWellbeingCheckin, 'id' | 'created_at'>): EnhancedWellbeingCheckin {
+    const item: EnhancedWellbeingCheckin = {
+      ...checkin,
+      id: uuidv4(),
+      created_at: new Date().toISOString()
+    };
+    this.enhancedCheckins.unshift(item);
+
+    // Also mirror to legacy checkins array so Digital Twin & Campus Radar work seamlessly
+    const legacyTier = checkin.mood_score >= 4 ? 'Good' : checkin.mood_score === 3 ? 'Okay' : checkin.mood_score === 2 ? 'Struggling' : 'Crisis';
+    this.addCheckin({
+      wellbeing_id: checkin.wellbeing_id,
+      mood_tier: legacyTier as any,
+      mood_score: checkin.mood_score,
+      feeling_tags: checkin.feeling_tags,
+      note: checkin.note
+    });
+
+    this.logAudit(checkin.wellbeing_id, 'ENHANCED_CHECKIN_RECORDED', {
+      mood: checkin.mood_tier,
+      stress: checkin.stress_level,
+      energy: checkin.energy_level
+    });
+
+    return item;
+  }
+
+  public getEnhancedCheckins(wellbeingId: string, limit = 30): EnhancedWellbeingCheckin[] {
+    return this.enhancedCheckins
+      .filter(c => c.wellbeing_id === wellbeingId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, limit);
+  }
+
+  public getAdaptiveQuestion(wellbeingId: string): AdaptiveCheckinQuestion | null {
+    const recent = this.getEnhancedCheckins(wellbeingId, 1);
+    if (!recent || recent.length === 0) return null;
+
+    const latest = recent[0];
+
+    // High stress trigger
+    if (latest.stress_level === 'High' || latest.mood_score <= 2) {
+      return {
+        id: `adaptive-stress-${latest.id}`,
+        trigger: 'HIGH_STRESS',
+        question: 'Would you like to tell me what is contributing most to your stress right now?',
+        options: ['Exams', 'Workload', 'Personal life', 'Relationships', 'Something else', 'Prefer not to say']
+      };
+    }
+
+    // Poor sleep trigger
+    if (latest.sleep_quality === 'Poor') {
+      return {
+        id: `adaptive-sleep-${latest.id}`,
+        trigger: 'POOR_SLEEP',
+        question: 'Has something specific been interrupting your rest recently?',
+        options: ['Late studying', 'Racing thoughts', 'Hostel noise', 'Screen time', 'Prefer not to say']
+      };
+    }
+
+    // Very low energy trigger
+    if (latest.energy_level === 'Very Low') {
+      return {
+        id: `adaptive-energy-${latest.id}`,
+        trigger: 'LOW_ENERGY',
+        question: 'When your energy feels depleted, what gives you the gentlest reset?',
+        options: ['Quiet rest', 'Short walk', 'Music / podcast', 'Talking to a friend', 'Prefer not to say']
+      };
+    }
+
+    return null;
+  }
+
+  // --- AI Response Feedback ---
+  public addAIFeedback(feedback: Omit<AIFeedbackItem, 'id' | 'created_at'>): AIFeedbackItem {
+    const item: AIFeedbackItem = {
+      ...feedback,
+      id: uuidv4(),
+      created_at: new Date().toISOString()
+    };
+    this.aiFeedbacks.push(item);
+    this.logAudit(feedback.wellbeing_id, 'AI_FEEDBACK_RECORDED', { helpful: feedback.helpful });
+    return item;
+  }
+
+  public getAIFeedbacks(): AIFeedbackItem[] {
+    return this.aiFeedbacks;
+  }
+
+  // --- Privacy-First Research & Model Improvement Consent ---
+  public getResearchConsent(userId: string): ResearchConsent {
+    const existing = this.researchConsents.get(userId);
+    if (existing) return existing;
+
+    // Strict default: OFF for all data improvement, and training is always strictly false
+    const defaultConsent: ResearchConsent = {
+      userId,
+      contributeToImprovement: false,
+      allowDeidentifiedFeedback: false,
+      allowDeidentifiedUsageAnalytics: false,
+      allowPrivateChatForTraining: false,
+      consentVersion: '1.0',
+      updatedAt: new Date().toISOString()
+    };
+    this.researchConsents.set(userId, defaultConsent);
+    return defaultConsent;
+  }
+
+  public saveResearchConsent(consent: ResearchConsent): void {
+    // Strictly enforce allowPrivateChatForTraining is false
+    const sanitized: ResearchConsent = {
+      ...consent,
+      allowPrivateChatForTraining: false,
+      updatedAt: new Date().toISOString()
+    };
+    this.researchConsents.set(consent.userId, sanitized);
+    this.logAudit(consent.userId, 'RESEARCH_CONSENT_UPDATED', {
+      contribute: sanitized.contributeToImprovement
+    });
   }
 
   public logAudit(wellbeingId: string | undefined, action: string, details?: any): void {

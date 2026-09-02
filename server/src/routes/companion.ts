@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { AuthRequest } from '../middleware/auth.js';
 import { db } from '../db/databaseAdapter.js';
-import { CompanionService } from '../services/ai/companionService.js';
+import { NivaraAgent } from '../services/ai/nivaraAgent.js';
 
 export const companionRouter = Router();
 
@@ -12,7 +12,7 @@ companionRouter.get('/messages', (req: AuthRequest, res) => {
   res.json({ messages });
 });
 
-// Send message to AI companion
+// Send message to AI companion (Orchestrated by NivaraAgent)
 companionRouter.post('/message', async (req: AuthRequest, res, next) => {
   try {
     const wellbeingId = req.user!.wellbeingId;
@@ -22,11 +22,48 @@ companionRouter.post('/message', async (req: AuthRequest, res, next) => {
       return res.status(400).json({ error: 'Message text is required' });
     }
 
-    const response = await CompanionService.processUserMessage(wellbeingId, message);
+    const response = await NivaraAgent.processMessage(wellbeingId, message);
     res.json(response);
   } catch (err) {
     next(err);
   }
+});
+
+// Chat alias
+companionRouter.post('/chat', async (req: AuthRequest, res, next) => {
+  try {
+    const wellbeingId = req.user!.wellbeingId;
+    const { message } = req.body;
+
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'Message text is required' });
+    }
+
+    const response = await NivaraAgent.processMessage(wellbeingId, message);
+    res.json(response);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// AI Response Feedback (Helpful / Not Helpful + Tag)
+companionRouter.post('/feedback', (req: AuthRequest, res) => {
+  const wellbeingId = req.user!.wellbeingId;
+  const { messageId, helpful, feedbackTag, comment } = req.body;
+
+  if (typeof helpful !== 'boolean') {
+    return res.status(400).json({ error: 'helpful boolean is required' });
+  }
+
+  const feedback = db.addAIFeedback({
+    wellbeing_id: wellbeingId,
+    message_id: messageId,
+    helpful,
+    feedback_tag: feedbackTag,
+    comment
+  });
+
+  res.json({ success: true, feedback });
 });
 
 // AI Memory Endpoints

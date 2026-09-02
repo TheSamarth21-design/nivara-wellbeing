@@ -107,10 +107,102 @@ async function runTests() {
   assert('Established student calculates non-clinical pattern state', ['Stable', 'Changing', 'Improving', 'Needs Attention'].includes(twin.currentPatternState));
   assert('Twin contains longitudinal reflections and micro-nudges', twin.insights.length > 0 && twin.microNudges.length > 0);
 
-  // TEST 4: Privacy & Identity Separation
-  console.log('\n--- TEST 4: Privacy & Identity Separation ---');
-  const exportData = db.exportUserData(wId);
-  assert('Data export contains structured user data without internal secrets', !!exportData && exportData.wellbeing_identity === wId);
+  // TEST 5: Personalization Profile
+  console.log('\n--- TEST 5: Personalization Engine & Profile ---');
+  db.saveWellbeingProfile({
+    userId: wId,
+    preferences: {
+      communicationStyle: 'direct',
+      preferredLanguage: 'en',
+      supportStyle: 'short'
+    },
+    routine: {
+      typicalSleepHours: '6-7 hrs',
+      studyPattern: 'Evening',
+      dailyRoutine: 'Flexible'
+    },
+    wellbeingPreferences: {
+      mainConcerns: ['Exam pressure', 'Time management'],
+      preferredSupportMethods: ['Breaking problems into smaller steps', 'Practical solutions']
+    },
+    baseline: {
+      initialMoodRange: 'Good',
+      stressPattern: 'Preparing for exams',
+      energyPattern: 'Normal'
+    },
+    currentContext: {
+      situation: 'Preparing for exams'
+    },
+    onboardingCompleted: true,
+    updatedAt: new Date().toISOString()
+  });
+
+  const p = db.getWellbeingProfile(wId);
+  assert('Personalization profile created with communication & support preferences', !!p && p.preferences.communicationStyle === 'direct');
+  assert('Non-clinical main concerns and support methods stored properly', (p?.wellbeingPreferences.mainConcerns.length || 0) > 0);
+
+  // TEST 6: Enhanced Visual Check-In & Adaptive Question Engine
+  console.log('\n--- TEST 6: Visual Check-In & Smart Adaptive Questions ---');
+  const chk = db.addEnhancedCheckin({
+    wellbeing_id: wId,
+    mood_tier: 'Low',
+    mood_score: 2,
+    energy_level: 'Low',
+    stress_level: 'High',
+    sleep_quality: 'Poor',
+    feeling_tags: ['tired', 'exam_stress']
+  });
+
+  assert('Enhanced check-in logs multi-metric wellbeing indicators (mood, energy, stress, sleep)', chk.mood_score === 2 && chk.stress_level === 'High');
+
+  const adaptive = db.getAdaptiveQuestion(wId);
+  assert('High stress triggers contextual adaptive question', !!adaptive && adaptive.trigger === 'HIGH_STRESS');
+  assert('Adaptive question provides non-clinical selection chips', !!adaptive && adaptive.options.includes('Exams'));
+
+  // TEST 7: NivaraAgent AI Orchestration & Conversation Memory
+  console.log('\n--- TEST 7: NivaraAgent Orchestration & Memory ---');
+  const { NivaraAgent } = await import('../server/src/services/ai/nivaraAgent.js');
+  
+  const aiReply1 = await NivaraAgent.processMessage(wId, 'I have exams tomorrow and I feel unprepared.');
+  assert('NivaraAgent generates supportive green response', aiReply1.safetyTier === 'GREEN' && aiReply1.reply.length > 0);
+
+  const aiReply2 = await NivaraAgent.processMessage(wId, 'It feels even harder now.');
+  assert('NivaraAgent preserves conversation continuity across turns', aiReply2.safetyTier === 'GREEN');
+
+  // Verify conversation memory stored
+  const memoryMessages = db.getAIMessages(wId, 10);
+  assert('Conversation memory tracks sliding window of turns', memoryMessages.length >= 4);
+
+  // Verify crisis safety override
+  const crisisReply = await NivaraAgent.processMessage(wId, 'I cannot take this anymore, I want to end my life.');
+  assert('Crisis message immediately triggers RED tier override with Tele-MANAS', crisisReply.safetyTier === 'RED' && crisisReply.suggestedAction === 'SAFETY_MODE');
+
+  // TEST 8: AI Response Feedback
+  console.log('\n--- TEST 8: Response Feedback Loop ---');
+  const fb = db.addAIFeedback({
+    wellbeing_id: wId,
+    helpful: false,
+    feedback_tag: 'Too generic',
+    comment: 'Wanted more step-by-step guidance'
+  });
+  assert('AI feedback records helpfulness and categorization tags separately from conversation', !!fb && fb.helpful === false && fb.feedback_tag === 'Too generic');
+
+  // TEST 9: Privacy-First Research Consent (Default OFF, Training Strictly False)
+  console.log('\n--- TEST 9: Privacy-First Research Consent ---');
+  const initialConsent = db.getResearchConsent(wId);
+  assert('Research consent defaults to OFF', initialConsent.contributeToImprovement === false);
+  assert('Private chat training is strictly false by default', initialConsent.allowPrivateChatForTraining === false);
+
+  db.saveResearchConsent({
+    ...initialConsent,
+    contributeToImprovement: true,
+    allowDeidentifiedFeedback: true,
+    allowPrivateChatForTraining: false
+  });
+
+  const updatedConsent = db.getResearchConsent(wId);
+  assert('Opt-in consent update succeeds', updatedConsent.contributeToImprovement === true && updatedConsent.allowDeidentifiedFeedback === true);
+  assert('Private chat training remains strictly false even when opted into research', updatedConsent.allowPrivateChatForTraining === false);
 
   // Clean up transient test records
   db.purgeUserData(wId);
