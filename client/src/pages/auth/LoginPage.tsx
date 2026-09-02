@@ -113,9 +113,23 @@ export const LoginPage: React.FC = () => {
 
         {/* Error Notice */}
         {error && (
-          <div className="p-3.5 rounded-2xl bg-error-container text-on-error-container text-xs font-medium flex items-start gap-2 border border-error/20 animate-fadeIn">
-            <span className="material-symbols-outlined text-error text-base shrink-0 mt-0.5">error</span>
-            <span className="leading-relaxed">{error}</span>
+          <div className="p-4 rounded-2xl bg-error-container text-on-error-container text-xs font-medium flex flex-col gap-2.5 border border-error/20 animate-fadeIn">
+            <div className="flex items-start gap-2">
+              <span className="material-symbols-outlined text-error text-base shrink-0 mt-0.5">error</span>
+              <span className="leading-relaxed">{error}</span>
+            </div>
+
+            {error.includes('Firebase Console') && (
+              <a
+                href="https://console.firebase.google.com/project/nivara-2cc8e/authentication"
+                target="_blank"
+                rel="noreferrer"
+                className="self-start mt-1 px-3 py-1.5 rounded-lg bg-error text-on-error text-[11px] font-bold hover:opacity-90 flex items-center gap-1 shadow-sm"
+              >
+                <span>Open Firebase Console (nivara-2cc8e)</span>
+                <span className="material-symbols-outlined text-xs">open_in_new</span>
+              </a>
+            )}
           </div>
         )}
 

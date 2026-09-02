@@ -7,6 +7,10 @@ export function getAuthErrorMessage(error: any): string {
     return 'Password must be at least 6 characters long (Firebase requirement).';
   }
 
+  if (combined.includes('configuration-not-found') || combined.includes('configuration_not_found')) {
+    return 'Firebase Authentication is not yet activated in your Firebase Console for project "nivara-2cc8e". Please open the Firebase Console, click "Get Started" under Authentication, and enable the Email/Password sign-in method.';
+  }
+
   if (combined.includes('operation-not-allowed') || combined.includes('operation_not_allowed')) {
     return 'Email/Password sign-in is not enabled in Firebase Console. Please go to Firebase Console > Authentication > Sign-in method and enable Email/Password.';
   }
