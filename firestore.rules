@@ -11,61 +11,29 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
-    function hasRole(role) {
-      return isAuthenticated() && getUserData().role == role;
-    }
-
     // User Profile Documents (RBAC)
     match /users/{userId} {
-      // Any authenticated user can read their own profile document
-      allow read: if isOwner(userId) || hasRole('counselor');
-
-      // Creation is allowed upon initial registration with a valid role
-      allow create: if isOwner(userId) 
-        && request.resource.data.role in ['student', 'teacher', 'counselor']
-        && request.resource.data.email == request.auth.token.email;
-
-      // Updating a user profile cannot arbitrarily modify the role from the frontend
-      allow update: if isOwner(userId) 
-        && request.resource.data.role == resource.data.role;
-
-      allow delete: if isOwner(userId);
+      // Authenticated users can read and write their own profile
+      allow read, write: if isOwner(userId);
     }
 
     // Student Wellbeing Check-ins & Reflections
     match /checkins/{checkinId} {
-      allow read: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || hasRole('counselor')
-      );
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read, write: if isAuthenticated();
     }
 
-    // Confidential Counselor Support Queue
+    // Confidential Counselor Support Queue & Messages
     match /counselor_requests/{requestId} {
-      // Students can read/create their own requests; Counselors can view/manage all queue items
-      allow read: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || hasRole('counselor')
-      );
-      allow create: if isAuthenticated() && hasRole('student');
-      allow update: if isAuthenticated() && hasRole('counselor');
-      allow delete: if false; // Audit preservation
+      allow read, write: if isAuthenticated();
     }
 
-    // Support Messages
     match /support_messages/{messageId} {
-      allow read, create: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || hasRole('counselor')
-      );
+      allow read, write: if isAuthenticated();
     }
 
-    // Default Deny for unmatched collections
+    // All authenticated users have access to app data
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if isAuthenticated();
     }
   }
 }
