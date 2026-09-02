@@ -85,7 +85,7 @@ export const WhatIfSimulatorView: React.FC = () => {
         <div className="p-6 rounded-3xl bg-surface-container-lowest border border-primary-fixed/80 shadow-md flex flex-col gap-4 animate-fadeIn">
           <div className="flex items-center justify-between border-b border-surface-variant/40 pb-3">
             <span className="font-headline font-bold text-base text-on-background">
-              Simulated Pathway: {result.pathwayName}
+              Simulated Pathway: {result.pathwayName || 'Workload Adjustment'}
             </span>
             <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed font-bold uppercase">
               Projected
@@ -95,28 +95,28 @@ export const WhatIfSimulatorView: React.FC = () => {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3.5 rounded-2xl bg-surface-container-low flex flex-col">
               <span className="text-[10px] text-on-surface-variant">Workload Pressure</span>
-              <span className="text-sm font-bold text-primary mt-1">{result.projectedImplications.workloadPressure}</span>
+              <span className="text-sm font-bold text-primary mt-1">{result.projectedImplications?.workloadPressure || 'Moderate'}</span>
             </div>
             <div className="p-3.5 rounded-2xl bg-surface-container-low flex flex-col">
               <span className="text-[10px] text-on-surface-variant">Recovery Margins</span>
-              <span className="text-sm font-bold text-secondary mt-1">{result.projectedImplications.recoveryTime}</span>
+              <span className="text-sm font-bold text-secondary mt-1">{result.projectedImplications?.recoveryTime || 'Adequate'}</span>
             </div>
             <div className="p-3.5 rounded-2xl bg-surface-container-low flex flex-col">
               <span className="text-[10px] text-on-surface-variant">Support Channel</span>
-              <span className="text-xs font-bold text-on-surface mt-1">{result.projectedImplications.supportInvolvement}</span>
+              <span className="text-xs font-bold text-on-surface mt-1">{result.projectedImplications?.supportInvolvement || 'Self-management'}</span>
             </div>
             <div className="p-3.5 rounded-2xl bg-surface-container-low flex flex-col">
               <span className="text-[10px] text-on-surface-variant">Mitigation</span>
-              <span className="text-xs font-medium text-on-surface mt-1">{result.projectedImplications.stressMitigation}</span>
+              <span className="text-xs font-medium text-on-surface mt-1">{result.projectedImplications?.stressMitigation || 'Creates buffer for rest'}</span>
             </div>
           </div>
 
           <div className="p-4 rounded-2xl bg-primary-fixed/20 border border-primary-fixed text-xs text-primary leading-relaxed">
-            {result.narrativeSummary}
+            {result.narrativeSummary || 'Pathway creates manageable workload intervals with protected rest buffers.'}
           </div>
 
           <span className="text-[10px] text-on-surface-variant italic text-center">
-            {result.disclaimer}
+            {result.disclaimer || 'This is a support-planning simulation, not a clinical diagnostic prediction.'}
           </span>
         </div>
       )}

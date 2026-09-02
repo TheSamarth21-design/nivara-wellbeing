@@ -174,13 +174,28 @@ export class ApiClient {
     } catch {
       return {
         wellbeingId: this.wellbeingId,
-        readinessIndex: 78,
-        longitudinalState: 'STEADY_RECOVERY',
-        trend: 'UPWARD',
-        keyDrivers: ['Adequate Rest Routine', 'Academic Chunking', 'Social Connectedness'],
-        personalizedNudges: [
-          'Take a 5-minute outdoor walk between lecture blocks.',
-          'Your evening wind-down routine is showing positive correlation with mood.'
+        currentPatternState: 'Stable' as const,
+        confidenceLevel: 'Established' as const,
+        checkinCount: 14,
+        baselineMoodAvg: 3.4,
+        recentMoodAvg: 3.2,
+        lastShiftDetected: 'Consistent baseline maintained over recent days.',
+        insights: [
+          'Evening sleep regularity shows positive correlation with your morning energy.',
+          'Study sessions spaced in 25-minute focus blocks indicate lowest strain markers.'
+        ],
+        microNudges: [
+          'Protect at least 20 minutes of restorative downtime tonight.',
+          'Take a gentle 5-minute walk outside between study intervals.'
+        ],
+        recentHistory: [
+          { date: 'Today', moodTier: 'good' as const, score: 4 },
+          { date: 'Yesterday', moodTier: 'okay' as const, score: 3 },
+          { date: '3d ago', moodTier: 'good' as const, score: 4 },
+          { date: '4d ago', moodTier: 'not_great' as const, score: 2 },
+          { date: '5d ago', moodTier: 'okay' as const, score: 3 },
+          { date: '6d ago', moodTier: 'good' as const, score: 4 },
+          { date: '7d ago', moodTier: 'good' as const, score: 4 }
         ]
       };
     }
@@ -254,15 +269,38 @@ export class ApiClient {
         body: JSON.stringify({ scenarioTitle, selectedPathway, timeHorizonDays })
       });
     } catch {
+      let pathwayName = 'Current Pace (Unchanged)';
+      let workload: 'High' | 'Moderate' | 'Low' | 'Balanced' = 'Moderate';
+      let recovery: 'Limited' | 'Adequate' | 'High' = 'Adequate';
+      let mitigation = 'Creates dedicated buffers before assessment deadlines.';
+      if (selectedPathway === 'B_REDUCE_WORKLOAD') {
+        pathwayName = 'Selective Workload Reduction';
+        workload = 'Moderate';
+        recovery = 'Adequate';
+        mitigation = 'De-prioritizes secondary tasks to protect restorative 7-hour sleep.';
+      } else if (selectedPathway === 'C_COUNSELLOR_ACADEMIC') {
+        pathwayName = 'Counsellor + Academic Liaison';
+        workload = 'Balanced';
+        recovery = 'High';
+        mitigation = 'Formal extension/assignment flexibility paired with guided coping.';
+      } else if (selectedPathway === 'D_PEER_STUDY_PLAN') {
+        pathwayName = 'Peer Support & Structured Milestones';
+        workload = 'Balanced';
+        recovery = 'Adequate';
+        mitigation = 'Shared accountability reduces isolation and last-minute cramming.';
+      }
+
       return {
         scenarioTitle,
-        selectedPathway,
-        projectedReadinessGain: '+14%',
-        burnoutRiskReduction: '-22%',
-        insights: [
-          'Pathway projected to stabilize energy levels within 4 days.',
-          'Reduced cognitive fatigue before upcoming deadlines.'
-        ]
+        pathwayName,
+        projectedImplications: {
+          workloadPressure: workload,
+          recoveryTime: recovery,
+          stressMitigation: mitigation,
+          supportInvolvement: 'Campus Guidance & Self-Regulation'
+        },
+        narrativeSummary: `Opting for '${pathwayName}' establishes a ${workload.toLowerCase()} workload intensity with ${recovery.toLowerCase()} recovery windows. ${mitigation}`,
+        disclaimer: 'This is a qualitative support simulation, not a clinical diagnostic prediction.'
       };
     }
   }
@@ -339,13 +377,41 @@ export class ApiClient {
       return await this.request('/radar');
     } catch {
       return {
-        totalCohorts: 6,
-        privacyThreshold: 5,
+        overallTotalStudents: 140,
+        activeCampusInitiatives: [
+          '24/7 Library Quiet Zone & Wellness Corner active across campus',
+          'Peer-Led Academic Revision Groups active across hostel blocks',
+          'Tele-MANAS Toll-Free helpline posters stationed at student centers'
+        ],
         departments: [
-          { name: 'Computer Science & Engineering', cohortSize: 42, anonymizedIndex: 74, status: 'MODERATE_STRESS' },
-          { name: 'Electronics & Communication', cohortSize: 38, anonymizedIndex: 81, status: 'THRIVING' },
-          { name: 'Mechanical Engineering', cohortSize: 29, anonymizedIndex: 69, status: 'MODERATE_STRESS' },
-          { name: 'Management Studies', cohortSize: 31, anonymizedIndex: 85, status: 'THRIVING' }
+          {
+            department: 'Computer Science & Engineering',
+            studentCount: 42,
+            isCohortProtected: false,
+            averageMoodIndex: 3.2,
+            recommendedCampusAction: 'Deploy exam stress management circles before mid-terms'
+          },
+          {
+            department: 'Electronics & Communication',
+            studentCount: 38,
+            isCohortProtected: false,
+            averageMoodIndex: 3.4,
+            recommendedCampusAction: 'Routine academic counseling availability'
+          },
+          {
+            department: 'Mechanical Engineering',
+            studentCount: 29,
+            isCohortProtected: false,
+            averageMoodIndex: 2.9,
+            recommendedCampusAction: 'Encourage restorative weekend downtime sessions'
+          },
+          {
+            department: 'Management Studies',
+            studentCount: 31,
+            isCohortProtected: false,
+            averageMoodIndex: 3.6,
+            recommendedCampusAction: 'Ongoing peer-mentorship workshops'
+          }
         ]
       };
     }

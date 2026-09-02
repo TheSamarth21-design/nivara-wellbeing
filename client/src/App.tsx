@@ -16,6 +16,7 @@ import { PrivacyCenterView } from './features/privacy/PrivacyCenterView';
 import { AdminPortalView } from './features/admin/AdminPortalView';
 import { SafetyModeModal } from './features/safety/SafetyModeModal';
 import { BreathingModal } from './features/home/BreathingModal';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 export const App: React.FC = () => {
   const [session, setSession] = useState<UserSession | null>(null);
@@ -123,42 +124,46 @@ export const App: React.FC = () => {
         onOpenSafety={() => setIsSafetyOpen(true)}
         onOpenPrivacy={() => setActiveTab('privacy')}
         onSwitchRole={handleRoleSwitch}
+        onOpenBreathing={() => setIsBreathingOpen(true)}
+        onLogout={handleLogout}
       />
 
       {/* Main Views Container */}
       <main className="flex-1">
-        {session.role === 'COUNSELLOR' ? (
-          <SilentCounsellorView role="COUNSELLOR" />
-        ) : session.role === 'ADMIN' ? (
-          <AdminPortalView />
-        ) : (
-          <>
-            {activeTab === 'home' && (
-              <EmotionalCenter
-                twinStatus={twinStatus}
-                onCheckinSubmitted={loadAppState}
-                onNavigateTab={setActiveTab}
-                onOpenBreathing={() => setIsBreathingOpen(true)}
-                preferredName={profileData?.profile?.preferred_name}
-              />
-            )}
-            {activeTab === 'talk' && (
-              <TalkCompanionChat
-                onOpenSafety={() => setIsSafetyOpen(true)}
-                onRequestCounsellor={() => setActiveTab('counsellor')}
-              />
-            )}
-            {activeTab === 'twin' && (
-              <DigitalTwinView twinStatus={twinStatus} onNavigateTab={setActiveTab} />
-            )}
-            {activeTab === 'simulator' && <WhatIfSimulatorView />}
-            {activeTab === 'radar' && <CampusRadarView />}
-            {activeTab === 'counsellor' && <SilentCounsellorView role="STUDENT" />}
-            {activeTab === 'privacy' && (
-              <PrivacyCenterView onLoggedOut={handleLogout} />
-            )}
-          </>
-        )}
+        <ErrorBoundary fallbackTitle="Digital Wellbeing Space" onReset={() => setActiveTab('home')}>
+          {session.role === 'COUNSELLOR' ? (
+            <SilentCounsellorView role="COUNSELLOR" />
+          ) : session.role === 'ADMIN' ? (
+            <AdminPortalView />
+          ) : (
+            <>
+              {activeTab === 'home' && (
+                <EmotionalCenter
+                  twinStatus={twinStatus}
+                  onCheckinSubmitted={loadAppState}
+                  onNavigateTab={setActiveTab}
+                  onOpenBreathing={() => setIsBreathingOpen(true)}
+                  preferredName={profileData?.profile?.preferred_name}
+                />
+              )}
+              {activeTab === 'talk' && (
+                <TalkCompanionChat
+                  onOpenSafety={() => setIsSafetyOpen(true)}
+                  onRequestCounsellor={() => setActiveTab('counsellor')}
+                />
+              )}
+              {activeTab === 'twin' && (
+                <DigitalTwinView twinStatus={twinStatus} onNavigateTab={setActiveTab} />
+              )}
+              {activeTab === 'simulator' && <WhatIfSimulatorView />}
+              {activeTab === 'radar' && <CampusRadarView />}
+              {activeTab === 'counsellor' && <SilentCounsellorView role="STUDENT" />}
+              {activeTab === 'privacy' && (
+                <PrivacyCenterView onLoggedOut={handleLogout} />
+              )}
+            </>
+          )}
+        </ErrorBoundary>
       </main>
 
       {/* Bottom Navigation Bar for Mobile & Desktop Shell */}
