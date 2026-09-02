@@ -16,8 +16,8 @@ export const config = {
     measurementId: process.env.FIREBASE_MEASUREMENT_ID || 'G-8898738GCY'
   },
   ai: {
-    apiKey: process.env.AI_PROVIDER_API_KEY || DEFAULT_AI_KEY,
-    model: process.env.AI_MODEL_NAME || 'gemini-3.6-flash'
+    apiKey: process.env.AI_PROVIDER_API_KEY || '',
+    model: process.env.AI_MODEL_NAME || 'gemini-1.5-flash'
   },
   privacy: {
     cohortMinThreshold: 5 // Strict SIH requirement: N >= 5 for Campus Radar

@@ -1,68 +1,70 @@
-import { ContextService, ConsentedContext } from './contextService.js';
-import { RiskEngine } from '../safety/riskEngine.js';
-import { SafetyResponseService } from '../safety/safetyResponseService.js';
-import { db } from '../../db/databaseAdapter.js';
-import { config } from '../../config/index.js';
+import { ConsentedContext, CompanionReply } from '../../types';
+import { SafetyEngine } from '../safety/safetyEngine';
+import { config } from '../../config';
+import { db } from '../../database/db';
 
 export class CompanionService {
-  public static async processUserMessage(wellbeingId: string, message: string): Promise<{
-    reply: string;
-    safetyTier: 'GREEN' | 'YELLOW' | 'RED';
-    suggestedAction?: string;
-    crisisResources?: any[];
-  }> {
-    // 1. Safety Filter First (Layered Deterministic + Contextual)
-    const safety = RiskEngine.evaluateMessage(wellbeingId, message);
-    const context = ContextService.buildContext(wellbeingId);
-
-    // Save user message
+  public static async processUserMessage(
+    wellbeingId: string,
+    message: string,
+    context: ConsentedContext
+  ): Promise<CompanionReply> {
+    // 1. Log incoming user message
     db.addAIMessage({
       wellbeing_id: wellbeingId,
       sender: 'user',
-      message,
-      safety_tier: safety.tier
+      message
     });
 
+    // 2. Strict Safety Tier Classification (Immediate 3-tier check)
+    const safety = SafetyEngine.classify(message);
+
     if (safety.tier === 'RED') {
-      const redReply = SafetyResponseService.getRedResponse(context.preferredName, context.preferredLanguage);
+      const redResponse = "I'm hearing how much pain you are in right now. Your life is important, and you don't have to carry this alone. Please connect with immediate professional support right now. Tele-MANAS (14416) is free, 24/7, and confidential.";
+      
       db.addAIMessage({
         wellbeing_id: wellbeingId,
         sender: 'assistant',
-        message: redReply,
-        safety_tier: 'RED',
-        suggested_action: 'TRIGGER_SAFETY_MODE'
+        message: redResponse,
+        safety_tier: 'RED'
       });
+
       return {
-        reply: redReply,
+        reply: redResponse,
         safetyTier: 'RED',
-        suggestedAction: 'TRIGGER_SAFETY_MODE',
+        suggestedAction: 'SAFETY_MODE',
         crisisResources: safety.crisisResources
       };
     }
 
     if (safety.tier === 'YELLOW') {
-      const yellowReply = SafetyResponseService.getYellowNudge(context.preferredName, context.preferredLanguage);
+      const yellowResponse = "It sounds like you're carrying a heavy load right now. I'm here to listen, but having a real person can help lighten the weight. Would you like me to connect you with a campus counsellor discreetly?";
+      
       db.addAIMessage({
         wellbeing_id: wellbeingId,
         sender: 'assistant',
-        message: yellowReply,
-        safety_tier: 'YELLOW',
-        suggested_action: 'OFFER_COUNSELLOR'
+        message: yellowResponse,
+        safety_tier: 'YELLOW'
       });
+
       return {
-        reply: yellowReply,
+        reply: yellowResponse,
         safetyTier: 'YELLOW',
         suggestedAction: 'OFFER_COUNSELLOR',
         crisisResources: safety.crisisResources
       };
     }
 
-    // Standard Green Empathetic Response Generation (Gemini AI with deterministic fallback)
+    // Standard Green Empathetic Response Generation
     let reply = '';
-    if (config.ai.apiKey) {
+    const apiKey = config.ai.apiKey;
+    const hasValidKey = Boolean(apiKey && apiKey.startsWith('AIzaSy') && apiKey.length > 20);
+
+    if (hasValidKey) {
       reply = await this.generateGeminiResponse(message, context);
     }
     
+    // Built-in empathetic engine fallback
     if (!reply) {
       reply = this.generateEmpatheticResponse(message, context);
     }
@@ -83,7 +85,7 @@ export class CompanionService {
   private static async generateGeminiResponse(msg: string, ctx: ConsentedContext): Promise<string> {
     try {
       const apiKey = config.ai.apiKey;
-      const model = config.ai.model || 'gemini-3.6-flash';
+      const model = config.ai.model || 'gemini-1.5-flash';
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
       const systemPrompt = `You are Nivara AI, a warm, compassionate, empathetic student mental wellbeing digital companion on an Indian university campus.
@@ -111,19 +113,18 @@ ${ctx.approvedMemories?.length ? `- Consented memories: ${ctx.approvedMemories.m
             temperature: 0.7
           }
         }),
-        signal: AbortSignal.timeout(6000)
+        signal: AbortSignal.timeout(8000)
       });
 
       if (!response.ok) {
-        console.warn(`[Gemini API] Request failed with status ${response.status}`);
         return '';
       }
 
       const data = await response.json() as any;
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
       return text || '';
-    } catch (err) {
-      console.warn('[Gemini API] Failed to generate response, falling back to local engine:', (err as Error).message);
+    } catch {
+      // Gracefully fall back to the built-in empathetic engine without terminal spam
       return '';
     }
   }
@@ -148,11 +149,14 @@ ${ctx.approvedMemories?.length ? `- Consented memories: ${ctx.approvedMemories.m
       return `Feeling disconnected is painful, especially during busy campus semesters. I'm here to listen quietly without judgment. What's been on your mind today?`;
     }
 
-    if (lower.includes('breathe') || lower.includes('reset') || lower.includes('calm')) {
-      return `Let's take a moment together. Inhale gently for 4 counts... hold for 4... and release for 6. Repeat this twice. Notice how your shoulders feel.`;
+    if (lower.includes('anxious') || lower.includes('anxiety') || lower.includes('panic') || lower.includes('overwhelmed') || lower.includes('stress')) {
+      return `It's completely okay that you're feeling this way right now. Let's ground ourselves: feel your feet resting on the floor and take one deep, gentle breath with me.`;
     }
 
-    return `Thank you for sharing that with me, ${name}. You don't have to figure everything out all at once. What would feel most supportive for you right now?`;
+    if (lower.includes('breathe') || lower.includes('reset') || lower.includes('calm')) {
+      return `Let's take a moment together. Inhale gently for 4 counts... hold for 4... and release for 6. Notice how your shoulders drop.`;
+    }
+
+    return `Thank you for sharing that with me, ${name}. You don't have to carry everything all at once. I'm right here with you.`;
   }
 }
-
