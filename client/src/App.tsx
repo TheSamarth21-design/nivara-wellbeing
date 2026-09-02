@@ -14,6 +14,8 @@ import { StudentDashboardPage } from './pages/student/StudentDashboardPage';
 import { TeacherDashboardPage } from './pages/teacher/TeacherDashboardPage';
 import { CounselorDashboardPage } from './pages/counselor/CounselorDashboardPage';
 
+import { LanguageProvider } from './context/LanguageContext';
+
 /**
  * RootRedirect handles checking initial Firebase session
  * and routing directly to the authenticated role dashboard.
@@ -35,8 +37,9 @@ const RootRedirect: React.FC = () => {
 export const App: React.FC = () => {
   return (
     <ErrorBoundary fallbackTitle="Nivara System">
-      <AuthProvider>
-        <BrowserRouter>
+      <LanguageProvider>
+        <AuthProvider>
+          <BrowserRouter>
           <Routes>
             {/* Root: Session detection and auto-routing */}
             <Route path="/" element={<RootRedirect />} />
@@ -81,8 +84,9 @@ export const App: React.FC = () => {
           </Routes>
         </BrowserRouter>
       </AuthProvider>
-    </ErrorBoundary>
-  );
+    </LanguageProvider>
+  </ErrorBoundary>
+);
 };
 
 export default App;

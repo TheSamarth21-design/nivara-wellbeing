@@ -1,19 +1,22 @@
 import React from 'react';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface Props {
   activeTab: string;
   onTabChange: (tab: string) => void;
-  language: string;
+  language?: string;
 }
 
 export const BottomNavBar: React.FC<Props> = ({ activeTab, onTabChange }) => {
+  const { t } = useLanguage();
+
   const tabs = [
-    { id: 'home', label: 'Home', icon: 'home_health' },
-    { id: 'talk', label: 'Talk', icon: 'forum' },
-    { id: 'twin', label: 'My Twin', icon: 'bubble_chart' },
-    { id: 'simulator', label: 'Simulator', icon: 'alt_route' },
-    { id: 'radar', label: 'Campus', icon: 'radar' },
-    { id: 'privacy', label: 'Me', icon: 'person' }
+    { id: 'home', label: t('nav_home', 'Home'), icon: 'home_health' },
+    { id: 'talk', label: t('nav_talk', 'Talk'), icon: 'forum' },
+    { id: 'twin', label: t('nav_twin', 'My Twin'), icon: 'bubble_chart' },
+    { id: 'simulator', label: t('nav_simulator', 'Simulator'), icon: 'alt_route' },
+    { id: 'radar', label: t('nav_radar', 'Campus'), icon: 'radar' },
+    { id: 'privacy', label: t('nav_me', 'Me'), icon: 'person' }
   ];
 
   return (

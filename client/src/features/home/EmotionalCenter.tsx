@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MoodTier, TwinStatus } from '../../types';
 import { ApiClient } from '../../lib/apiClient';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface Props {
   twinStatus: TwinStatus | null;
@@ -8,6 +9,7 @@ interface Props {
   onNavigateTab: (tab: string) => void;
   onOpenBreathing: () => void;
   preferredName?: string;
+  onUpdatePreferredName?: (name: string) => void;
 }
 
 export const EmotionalCenter: React.FC<Props> = ({
@@ -15,28 +17,36 @@ export const EmotionalCenter: React.FC<Props> = ({
   onCheckinSubmitted,
   onNavigateTab,
   onOpenBreathing,
-  preferredName
+  preferredName,
+  onUpdatePreferredName
 }) => {
+  const { t } = useLanguage();
   const [selectedMood, setSelectedMood] = useState<MoodTier | null>(null);
-  const [note, setNote] = useState('');
-  const [submittedToday, setSubmittedToday] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [submittedToday, setSubmittedToday] = useState(false);
   const [showContextBanner, setShowContextBanner] = useState(true);
   const [quickWorkload, setQuickWorkload] = useState<'Low' | 'Moderate' | 'High' | 'Very high'>('High');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState(preferredName || '');
 
-  const handleMoodSelect = async (mood: MoodTier) => {
-    setSelectedMood(mood);
+  // Dynamic time-of-day greeting
+  const hour = new Date().getHours();
+  const greetingTime = hour < 12 ? t('good_morning', 'Good morning') : hour < 17 ? t('good_afternoon', 'Good afternoon') : t('good_evening', 'Good evening');
+
+  const handleMoodSelect = async (tier: MoodTier) => {
+    setSelectedMood(tier);
     setLoading(true);
+
     try {
       await ApiClient.submitCheckin({
-        moodTier: mood,
-        feelingTags: ['Daily Reflection'],
-        note: note || undefined
+        moodTier: tier,
+        feelingTags: [tier, 'quick_bento'],
+        note: `Quick 1-tap check-in: ${tier}`
       });
       setSubmittedToday(true);
       onCheckinSubmitted();
-    } catch (err) {
-      console.error('Check-in error:', err);
+    } catch (e) {
+      console.error(e);
     } finally {
       setLoading(false);
     }
@@ -44,8 +54,9 @@ export const EmotionalCenter: React.FC<Props> = ({
 
   const handleUpdateContext = async () => {
     try {
-      await ApiClient.request('/profile/onboarding', {
+      await fetch('/api/twin/context', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           academicContext: {
             workload: quickWorkload,
@@ -61,26 +72,78 @@ export const EmotionalCenter: React.FC<Props> = ({
     }
   };
 
+  const handleSaveName = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (tempName.trim() && onUpdatePreferredName) {
+      onUpdatePreferredName(tempName.trim());
+      setIsEditingName(false);
+    }
+  };
+
   const moodOptions: Array<{ tier: MoodTier; emoji: string; label: string; bg: string }> = [
-    { tier: 'good', emoji: '🙂', label: 'Good', bg: 'bg-primary-fixed/20 hover:bg-primary-fixed/40' },
-    { tier: 'okay', emoji: '😐', label: 'Okay', bg: 'bg-secondary-fixed/20 hover:bg-secondary-fixed/40' },
-    { tier: 'not_great', emoji: '😕', label: 'Not great', bg: 'bg-tertiary-fixed/20 hover:bg-tertiary-fixed/40' },
-    { tier: 'difficult', emoji: '😣', label: 'Difficult', bg: 'bg-error-container/40 hover:bg-error-container/60' }
+    { tier: 'good', emoji: '🙂', label: t('mood_good', 'Good'), bg: 'bg-primary-fixed/20 hover:bg-primary-fixed/40' },
+    { tier: 'okay', emoji: '😐', label: t('mood_okay', 'Okay'), bg: 'bg-secondary-fixed/20 hover:bg-secondary-fixed/40' },
+    { tier: 'not_great', emoji: '😕', label: t('mood_not_great', 'Not great'), bg: 'bg-tertiary-fixed/20 hover:bg-tertiary-fixed/40' },
+    { tier: 'difficult', emoji: '😣', label: t('mood_difficult', 'Difficult'), bg: 'bg-error-container/40 hover:bg-error-container/60' }
   ];
 
   return (
     <div className="max-w-[1100px] mx-auto px-4 py-6 flex flex-col gap-6 animate-fadeIn pb-24">
       {/* Header Greeting */}
       <section className="flex flex-col gap-1 mt-2">
-        <h1 className="font-headline font-bold text-2xl md:text-3xl text-on-background">
-          Good evening {preferredName ? `, ${preferredName}` : '🌿'}
-        </h1>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h1 className="font-headline font-bold text-2xl md:text-3xl text-on-background flex items-center gap-2">
+            <span>{greetingTime}</span>
+            {preferredName && (
+              <span>, <strong className="text-primary font-bold">{preferredName}</strong></span>
+            )}
+          </h1>
+          {onUpdatePreferredName && (
+            <button
+              onClick={() => {
+                setTempName(preferredName || '');
+                setIsEditingName(!isEditingName);
+              }}
+              className="text-[11px] text-on-surface-variant/70 hover:text-primary p-1 rounded-full hover:bg-surface-container flex items-center"
+              title="Edit your preferred display name"
+            >
+              <span className="material-symbols-outlined text-sm">edit</span>
+            </button>
+          )}
+        </div>
+
+        {isEditingName && (
+          <form onSubmit={handleSaveName} className="flex items-center gap-2 mt-1 animate-fadeIn max-w-sm">
+            <input
+              type="text"
+              required
+              value={tempName}
+              onChange={(e) => setTempName(e.target.value)}
+              placeholder="Your preferred name (e.g. Sam)"
+              className="px-3 py-1.5 rounded-xl bg-surface-container border border-outline-variant/60 text-xs text-on-background focus:outline-none focus:border-primary flex-1"
+            />
+            <button
+              type="submit"
+              className="px-3 py-1.5 rounded-xl bg-primary text-on-primary text-xs font-semibold"
+            >
+              {t('save_name', 'Save')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsEditingName(false)}
+              className="px-2 py-1.5 text-xs text-on-surface-variant hover:text-on-surface"
+            >
+              ✕
+            </button>
+          </form>
+        )}
+
         <p className="text-sm text-on-surface-variant max-w-lg">
-          You don't have to figure everything out right now.
+          {t('greeting_sub', "You don't have to figure everything out right now.")}
         </p>
       </section>
 
-      {/* Contextual Update Banner ("Has anything changed?") - Section 4 Requirement */}
+      {/* Contextual Update Banner ("Has anything changed?") */}
       {showContextBanner && (
         <section className="p-4 rounded-3xl bg-secondary-container/30 border border-secondary-container/60 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
           <div className="flex items-center gap-3">
@@ -88,8 +151,12 @@ export const EmotionalCenter: React.FC<Props> = ({
               📅
             </div>
             <div className="flex flex-col">
-              <span className="text-xs font-bold text-on-background">Has anything changed in your routine or exams?</span>
-              <span className="text-[11px] text-on-surface-variant">Update your context to keep your Twin baseline calibrated.</span>
+              <span className="text-xs font-bold text-on-background">
+                {t('routine_question', 'Has anything changed in your routine or exams?')}
+              </span>
+              <span className="text-[11px] text-on-surface-variant">
+                {t('routine_sub', 'Update your context to keep your Twin baseline calibrated.')}
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-2 self-end sm:self-center">
@@ -107,23 +174,23 @@ export const EmotionalCenter: React.FC<Props> = ({
               onClick={handleUpdateContext}
               className="px-3.5 py-1.5 rounded-lg bg-secondary text-on-secondary text-xs font-semibold hover:opacity-90"
             >
-              Update
+              {t('update_btn', 'Update')}
             </button>
             <button
               onClick={() => setShowContextBanner(false)}
               className="text-xs text-on-surface-variant hover:text-on-surface px-2"
             >
-              Not now
+              {t('not_now_btn', 'Not now')}
             </button>
           </div>
         </section>
       )}
 
-      {/* 4-Tier Low Friction Daily Check-In Bento */}
+      {/* 4-Tier Daily Check-In Bento */}
       <section className="bg-surface-container-lowest rounded-3xl p-6 shadow-sm border border-surface-variant/50 flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <h2 className="font-headline font-semibold text-base text-on-background">
-            How are things feeling today?
+            {t('checkin_title', 'How are things feeling today?')}
           </h2>
           {submittedToday && (
             <span className="text-xs text-primary font-medium flex items-center gap-1">
@@ -151,7 +218,7 @@ export const EmotionalCenter: React.FC<Props> = ({
         </div>
       </section>
 
-      {/* Action Cards (Asymmetric Stitch Layout) */}
+      {/* Action Cards */}
       <section className="grid grid-cols-1 md:grid-cols-12 gap-5">
         <div className="md:col-span-8 bg-surface-container-lowest rounded-3xl p-7 shadow-sm border border-surface-variant/50 relative overflow-hidden flex flex-col justify-between min-h-[220px]">
           <div className="absolute -top-10 -right-10 w-48 h-48 bg-primary-fixed/30 rounded-full blur-2xl opacity-60 pointer-events-none" />
@@ -159,9 +226,11 @@ export const EmotionalCenter: React.FC<Props> = ({
             <div className="w-10 h-10 rounded-2xl bg-surface-container flex items-center justify-center text-primary mb-1">
               <span className="material-symbols-outlined text-xl">forum</span>
             </div>
-            <h3 className="font-headline font-bold text-lg text-on-background">Talk privately with Companion</h3>
+            <h3 className="font-headline font-bold text-lg text-on-background">
+              {t('talk_title', 'Talk privately with Companion')}
+            </h3>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              What's on your mind? Share thoughts in a quiet, non-judgmental space via text or voice.
+              {t('talk_desc', "What's on your mind? Share thoughts in a quiet, non-judgmental space via text or voice.")}
             </p>
           </div>
           <div className="relative z-10 mt-6 flex items-center gap-3">
@@ -169,64 +238,61 @@ export const EmotionalCenter: React.FC<Props> = ({
               onClick={() => onNavigateTab('talk')}
               className="px-6 py-3 rounded-full bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-colors flex items-center gap-2 shadow-sm"
             >
-              <span>Start talking</span>
+              <span>{t('start_talking', 'Start talking')}</span>
               <span className="material-symbols-outlined text-sm">arrow_forward</span>
             </button>
             <button
               onClick={() => onNavigateTab('simulator')}
               className="px-4 py-3 rounded-full bg-surface-container hover:bg-surface-variant text-xs font-semibold text-on-surface transition-colors"
             >
-              What-If Simulator
+              {t('what_if_btn', 'What-If Simulator')}
             </button>
           </div>
         </div>
 
-        <div className="md:col-span-4 bg-surface-container-low rounded-3xl p-6 shadow-sm border border-surface-variant/50 relative overflow-hidden flex flex-col justify-between min-h-[220px]">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] uppercase tracking-widest font-bold text-secondary">For you today</span>
-            <h3 className="font-headline font-bold text-base text-on-background">2-minute reset</h3>
-            <p className="text-xs text-on-surface-variant mt-1">
-              A gentle box-breathing rhythm to decompress your mind.
+        {/* 2-Minute Reset Quick Tool */}
+        <div className="md:col-span-4 bg-surface-container-lowest rounded-3xl p-7 shadow-sm border border-surface-variant/50 flex flex-col justify-between min-h-[220px]">
+          <div className="flex flex-col gap-2">
+            <span className="text-[10px] font-bold tracking-wider uppercase text-secondary">
+              FOR YOU TODAY
+            </span>
+            <h3 className="font-headline font-bold text-lg text-on-background">
+              {t('reset_title', '2-minute reset')}
+            </h3>
+            <p className="text-xs text-on-surface-variant leading-relaxed">
+              {t('reset_desc', 'A gentle box-breathing rhythm to decompress your mind.')}
             </p>
           </div>
           <button
             onClick={onOpenBreathing}
-            className="mt-6 w-max px-6 py-2.5 rounded-full border border-secondary text-secondary text-xs font-semibold hover:bg-secondary/10 transition-colors"
+            className="w-full py-3 rounded-full bg-surface-container hover:bg-surface-variant text-xs font-semibold text-on-surface transition-colors mt-6 flex items-center justify-center gap-2"
           >
-            Start Reset
+            <span className="text-base">🧘</span>
+            <span>{t('start_reset', 'Start Reset')}</span>
           </button>
         </div>
       </section>
 
-      {/* Digital Twin Snapshot Pill */}
+      {/* Twin Reflection Strip */}
       {twinStatus && (
-        <section
-          onClick={() => onNavigateTab('twin')}
-          className="p-5 rounded-3xl bg-surface-container-lowest border border-primary-fixed/60 shadow-sm flex items-center justify-between cursor-pointer hover:bg-surface-container-low transition-colors"
-        >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-primary-fixed to-secondary-fixed flex items-center justify-center text-2xl shadow-inner">
-              🔮
-            </div>
+        <section className="p-5 rounded-3xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🌱</span>
             <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="font-headline font-bold text-sm text-on-background">Digital Wellbeing Twin</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                  twinStatus.currentPatternState === 'Stable'
-                    ? 'bg-primary-fixed text-on-primary-fixed'
-                    : twinStatus.currentPatternState === 'Improving'
-                    ? 'bg-secondary-fixed text-on-secondary-fixed'
-                    : 'bg-tertiary-fixed text-on-tertiary-fixed'
-                }`}>
-                  {twinStatus.currentPatternState}
-                </span>
-              </div>
-              <span className="text-xs text-on-surface-variant mt-0.5">
-                {twinStatus.lastShiftDetected || 'Observing daily patterns'}
+              <span className="text-xs font-bold text-on-background">
+                Baseline: {twinStatus.currentPatternState || 'Balanced'} ({twinStatus.confidenceLevel} calibration)
+              </span>
+              <span className="text-[11px] text-on-surface-variant">
+                {twinStatus.insights?.[0] || 'Your baseline remains balanced this week.'}
               </span>
             </div>
           </div>
-          <span className="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+          <button
+            onClick={() => onNavigateTab('twin')}
+            className="text-xs text-primary font-semibold hover:underline shrink-0"
+          >
+            View Twin →
+          </button>
         </section>
       )}
     </div>

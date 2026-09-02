@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { TwinStatus, CrisisResourceItem } from '../../types';
 import { ApiClient } from '../../lib/apiClient';
+import { userService } from '../../services/userService';
 
 import { TopAppBar } from '../../components/layout/TopAppBar';
 import { BottomNavBar } from '../../components/layout/BottomNavBar';
@@ -17,19 +18,26 @@ import { BreathingModal } from '../../features/home/BreathingModal';
 import { ErrorBoundary } from '../../components/common/ErrorBoundary';
 
 export const StudentDashboardPage: React.FC = () => {
-  const { profile, logout } = useAuth();
+  const { user, profile, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('home');
-  const [language, setLanguage] = useState<'en' | 'hi' | 'mr'>('en');
   const [twinStatus, setTwinStatus] = useState<TwinStatus | null>(null);
   const [profileData, setProfileData] = useState<any>(null);
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
   const [isBreathingOpen, setIsBreathingOpen] = useState(false);
   const [helplines, setHelplines] = useState<CrisisResourceItem[]>([]);
+  const [currentName, setCurrentName] = useState<string>(() => {
+    return profile?.name || 'Sam';
+  });
 
   const wellbeingId = profile?.wellbeingId || 'WELL-STUDENT';
 
   useEffect(() => {
     ApiClient.setWellbeingId(wellbeingId);
+
+    // If profile has a name, update currentName
+    if (profile?.name) {
+      setCurrentName(profile.name);
+    }
 
     // Load crisis helplines config
     ApiClient.getHelplines().then((res) => {
@@ -38,7 +46,7 @@ export const StudentDashboardPage: React.FC = () => {
     }).catch(() => {});
 
     loadAppState();
-  }, [wellbeingId]);
+  }, [wellbeingId, profile]);
 
   const loadAppState = async () => {
     try {
@@ -53,19 +61,25 @@ export const StudentDashboardPage: React.FC = () => {
     }
   };
 
+  const handleUpdateName = async (newName: string) => {
+    setCurrentName(newName);
+    if (user?.uid) {
+      await userService.updateUserProfile(user.uid, { name: newName });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background text-on-background flex flex-col selection:bg-primary-fixed">
       {/* Top App Bar */}
       <TopAppBar
         wellbeingId={wellbeingId}
         role="student"
-        language={language}
-        onLanguageChange={setLanguage}
         onOpenSafety={() => setIsSafetyOpen(true)}
         onOpenPrivacy={() => setActiveTab('privacy')}
-        onSwitchRole={() => {}}
         onOpenBreathing={() => setIsBreathingOpen(true)}
         onLogout={logout}
+        userName={currentName}
+        onUpdateName={handleUpdateName}
       />
 
       {/* Main Views Container */}
@@ -77,7 +91,8 @@ export const StudentDashboardPage: React.FC = () => {
               onCheckinSubmitted={loadAppState}
               onNavigateTab={setActiveTab}
               onOpenBreathing={() => setIsBreathingOpen(true)}
-              preferredName={profile?.name || profileData?.profile?.preferred_name}
+              preferredName={currentName}
+              onUpdatePreferredName={handleUpdateName}
             />
           )}
           {activeTab === 'talk' && (
@@ -99,7 +114,7 @@ export const StudentDashboardPage: React.FC = () => {
       </main>
 
       {/* Bottom Navigation Bar for Mobile & Desktop Shell */}
-      <BottomNavBar activeTab={activeTab} onTabChange={setActiveTab} language={language} />
+      <BottomNavBar activeTab={activeTab} onTabChange={setActiveTab} />
 
       {/* Modals */}
       <SafetyModeModal
