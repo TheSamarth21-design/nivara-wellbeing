@@ -8,9 +8,10 @@ interface Props {
   onLanguageChange: (lang: 'en' | 'hi' | 'mr') => void;
   onOpenSafety: () => void;
   onOpenPrivacy: () => void;
-  onSwitchRole: (role: UserRole) => void;
+  onSwitchRole?: (role: UserRole) => void;
   onOpenBreathing?: () => void;
   onLogout?: () => void;
+  userName?: string;
 }
 
 export const TopAppBar: React.FC<Props> = ({
@@ -20,9 +21,9 @@ export const TopAppBar: React.FC<Props> = ({
   onLanguageChange,
   onOpenSafety,
   onOpenPrivacy,
-  onSwitchRole,
   onOpenBreathing,
-  onLogout
+  onLogout,
+  userName
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -33,11 +34,8 @@ export const TopAppBar: React.FC<Props> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const roleLabels: Record<UserRole, { title: string; icon: string; desc: string }> = {
-    STUDENT: { title: 'Student Portal', icon: 'school', desc: 'Daily check-ins & digital twin' },
-    COUNSELLOR: { title: 'Counsellor Desk', icon: 'support_agent', desc: 'Anonymous queue & intervention' },
-    ADMIN: { title: 'Campus Radar Admin', icon: 'admin_panel_settings', desc: 'Cohort analytics & safety logs' }
-  };
+  const normalizedRole = (role || 'student').toLowerCase();
+  const roleDisplay = normalizedRole === 'student' ? 'Student' : normalizedRole === 'teacher' ? 'Teacher' : 'Counselor';
 
   return (
     <>
@@ -53,37 +51,24 @@ export const TopAppBar: React.FC<Props> = ({
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="font-headline font-bold text-primary text-base tracking-tight">Nivara</span>
-                {role !== 'STUDENT' && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-semibold shrink-0">
-                    {role}
-                  </span>
-                )}
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-semibold shrink-0 capitalize">
+                  {roleDisplay}
+                </span>
               </div>
               <span className="text-[11px] text-on-surface-variant/80 font-mono truncate hidden sm:inline">
-                {role === 'STUDENT' ? `ID: ${wellbeingId}` : roleLabels[role].title}
+                ID: {wellbeingId}
               </span>
             </div>
           </div>
 
           {/* Right Action Bar */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Desktop-only quick role switcher */}
-            <div className="hidden lg:flex items-center gap-2">
-              <select
-                value={role}
-                onChange={(e) => onSwitchRole(e.target.value as UserRole)}
-                className="text-xs bg-surface-container px-2.5 py-1.5 rounded-lg border border-outline-variant/60 text-on-surface font-medium cursor-pointer focus:outline-none"
-                title="Switch Prototype Portal"
-              >
-                <option value="STUDENT">Student Portal</option>
-                <option value="COUNSELLOR">Counsellor Desk</option>
-                <option value="ADMIN">Campus Radar Admin</option>
-              </select>
-
+            {/* Desktop Language Selector */}
+            <div className="hidden sm:flex items-center">
               <select
                 value={language}
                 onChange={(e) => onLanguageChange(e.target.value as any)}
-                className="text-xs bg-surface-container px-2 py-1.5 rounded-lg border border-outline-variant/60 text-on-surface cursor-pointer focus:outline-none"
+                className="text-xs bg-surface-container px-2.5 py-1.5 rounded-lg border border-outline-variant/60 text-on-surface cursor-pointer focus:outline-none"
               >
                 <option value="en">EN</option>
                 <option value="hi">हिंदी</option>
@@ -102,7 +87,7 @@ export const TopAppBar: React.FC<Props> = ({
               <span className="inline xs:hidden sm:hidden">SOS</span>
             </button>
 
-            {/* 3-Line Hamburger Menu Button (Three-Line Feature) */}
+            {/* 3-Line Hamburger Menu Button */}
             <button
               onClick={() => setIsMenuOpen(true)}
               className="w-9 h-9 rounded-xl flex items-center justify-center bg-surface-container hover:bg-surface-variant/70 text-on-surface transition-all active:scale-95 border border-outline-variant/40"
@@ -132,8 +117,12 @@ export const TopAppBar: React.FC<Props> = ({
                 <div className="flex items-center gap-2.5">
                   <img src="/logo.png" alt="Logo" className="w-8 h-8 rounded-full object-cover" />
                   <div>
-                    <h2 className="font-headline font-bold text-sm text-on-background">Nivara Wellbeing</h2>
-                    <span className="text-[10px] text-on-surface-variant">Anonymous Student Support</span>
+                    <h2 className="font-headline font-bold text-sm text-on-background">
+                      {userName ? userName : 'Nivara Space'}
+                    </h2>
+                    <span className="text-[10px] text-on-surface-variant capitalize">
+                      {roleDisplay} Account • Verified
+                    </span>
                   </div>
                 </div>
                 <button
@@ -150,7 +139,7 @@ export const TopAppBar: React.FC<Props> = ({
                 <div className="p-3.5 rounded-2xl bg-surface-container border border-outline-variant/40 flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
-                      Active Session ID
+                      Active Wellbeing ID
                     </span>
                     <button
                       onClick={handleCopyId}
@@ -164,47 +153,14 @@ export const TopAppBar: React.FC<Props> = ({
                     {wellbeingId}
                   </span>
                   <p className="text-[10px] text-on-surface-variant leading-tight">
-                    🔒 Identity Separated: Your real identity is never exposed to peers or public campus boards.
+                    🔒 Identity Separated: Your personal data is protected with Firebase RBAC and Firestore security rules.
                   </p>
-                </div>
-              </div>
-
-              {/* Portal / Role Switcher Section */}
-              <div className="p-4 border-b border-surface-variant/40 flex flex-col gap-2">
-                <span className="text-xs font-bold text-on-background">Switch View / Portal</span>
-                <div className="flex flex-col gap-1.5">
-                  {(['STUDENT', 'COUNSELLOR', 'ADMIN'] as UserRole[]).map((r) => {
-                    const info = roleLabels[r];
-                    const isSelected = role === r;
-                    return (
-                      <button
-                        key={r}
-                        onClick={() => {
-                          onSwitchRole(r);
-                          setIsMenuOpen(false);
-                        }}
-                        className={`p-3 rounded-2xl text-left border flex items-center gap-3 transition-all ${
-                          isSelected
-                            ? 'bg-primary-fixed/40 border-primary text-on-primary-fixed shadow-sm'
-                            : 'bg-surface-container-low border-outline-variant/40 hover:bg-surface-container text-on-surface'
-                        }`}
-                      >
-                        <span className={`material-symbols-outlined text-xl ${isSelected ? 'text-primary' : 'text-on-surface-variant'}`}>
-                          {info.icon}
-                        </span>
-                        <div className="flex flex-col">
-                          <span className="text-xs font-bold">{info.title}</span>
-                          <span className="text-[10px] text-on-surface-variant">{info.desc}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
 
               {/* Language Selection */}
               <div className="p-4 border-b border-surface-variant/40 flex flex-col gap-2">
-                <span className="text-xs font-bold text-on-background">Select Language</span>
+                <span className="text-xs font-bold text-on-background">Language</span>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { id: 'en', label: 'English', sub: 'English' },
@@ -229,7 +185,7 @@ export const TopAppBar: React.FC<Props> = ({
 
               {/* Quick Wellbeing Shortcuts */}
               <div className="p-4 flex flex-col gap-1.5">
-                <span className="text-xs font-bold text-on-background mb-1">Quick Tools</span>
+                <span className="text-xs font-bold text-on-background mb-1">Tools & Safety</span>
 
                 {onOpenBreathing && (
                   <button
@@ -257,7 +213,7 @@ export const TopAppBar: React.FC<Props> = ({
                   <span className="material-symbols-outlined text-primary text-lg">verified_user</span>
                   <div className="flex flex-col">
                     <span className="font-semibold">Privacy & Consent Center</span>
-                    <span className="text-[10px] text-on-surface-variant">Control what data is shared</span>
+                    <span className="text-[10px] text-on-surface-variant">Manage consents & security</span>
                   </div>
                 </button>
 
@@ -287,7 +243,7 @@ export const TopAppBar: React.FC<Props> = ({
                 className="w-full py-2.5 rounded-full bg-surface-container-highest hover:bg-surface-variant text-xs font-semibold text-on-surface transition-colors flex items-center justify-center gap-1.5"
               >
                 <span className="material-symbols-outlined text-sm">logout</span>
-                <span>Sign Out / Switch Account</span>
+                <span>Sign Out ({roleDisplay})</span>
               </button>
             </div>
           </div>

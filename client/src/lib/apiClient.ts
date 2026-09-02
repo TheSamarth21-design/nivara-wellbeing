@@ -46,72 +46,7 @@ export class ApiClient {
     return res.json();
   }
 
-  // Auth (with automatic offline / static hosting fallback)
-  public static async sendOtp(contact: string, type: 'email' | 'mobile' = 'email') {
-    try {
-      return await this.request('/auth/send-otp', {
-        method: 'POST',
-        body: JSON.stringify({ contact, type })
-      });
-    } catch {
-      // Offline / Static Preview Fallback: Always allow OTP generation
-      return {
-        success: true,
-        message: `Verification code sent to ${contact}`,
-        mockOtp: '123456',
-        cooldownSeconds: 30
-      };
-    }
-  }
-
-  public static async verifyOtp(contact: string, otp: string, type: 'email' | 'mobile' = 'email') {
-    try {
-      return await this.request('/auth/verify-otp', {
-        method: 'POST',
-        body: JSON.stringify({ contact, otp, type })
-      });
-    } catch {
-      // Validate OTP (123456 is standard demo code)
-      if (otp !== '123456' && otp !== '000000' && otp.length !== 6) {
-        throw new Error('Invalid verification code. Please enter 123456 for demo.');
-      }
-      const wellbeingId = 'WELL-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-      this.setWellbeingId(wellbeingId);
-      return {
-        success: true,
-        token: wellbeingId,
-        user: {
-          wellbeingId,
-          role: 'STUDENT',
-          onboardingCompleted: true,
-          isFirstTime: false
-        }
-      };
-    }
-  }
-
-  public static async demoLogin(role: 'STUDENT' | 'COUNSELLOR' | 'ADMIN') {
-    try {
-      return await this.request('/auth/demo-login', {
-        method: 'POST',
-        body: JSON.stringify({ role })
-      });
-    } catch {
-      let wellbeingId = 'WELL-8F42';
-      if (role === 'COUNSELLOR') wellbeingId = 'COUNSELLOR-01';
-      if (role === 'ADMIN') wellbeingId = 'ADMIN-01';
-      this.setWellbeingId(wellbeingId);
-      return {
-        success: true,
-        token: wellbeingId,
-        user: {
-          wellbeingId,
-          role,
-          onboardingCompleted: true
-        }
-      };
-    }
-  }
+  // Authentication is managed securely via Firebase Authentication (see services/authService.ts)
 
   // Profile & Onboarding
   public static async getProfile() {

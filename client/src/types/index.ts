@@ -1,4 +1,5 @@
-export type UserRole = 'STUDENT' | 'COUNSELLOR' | 'ADMIN';
+export * from './auth';
+export type UserRole = 'student' | 'teacher' | 'counselor' | 'STUDENT' | 'COUNSELLOR' | 'ADMIN';
 
 export type MoodTier = 'good' | 'okay' | 'not_great' | 'difficult';
 
