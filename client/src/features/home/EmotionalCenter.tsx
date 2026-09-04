@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MoodTier, TwinStatus } from '../../types';
 import { ApiClient } from '../../lib/apiClient';
+import { AiApiClient } from '../../services/aiApi';
 import { useLanguage } from '../../context/LanguageContext';
 
 interface Props {
@@ -31,6 +32,13 @@ export const EmotionalCenter: React.FC<Props> = ({
   const [optionalNote, setOptionalNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [submittedToday, setSubmittedToday] = useState(false);
+  const [aiStatus, setAiStatus] = useState<'ONLINE' | 'OFFLINE' | 'CHECKING'>('CHECKING');
+
+  useEffect(() => {
+    AiApiClient.checkHealth()
+      .then((st) => setAiStatus(st as any))
+      .catch(() => setAiStatus('OFFLINE'));
+  }, []);
 
   // Smart Adaptive Question State
   const [adaptiveQuestion, setAdaptiveQuestion] = useState<{
@@ -385,6 +393,47 @@ export const EmotionalCenter: React.FC<Props> = ({
             </div>
           )}
         </div>
+      </section>
+
+      {/* AI Multidimensional Wellbeing & Stress Assessment Bento Card */}
+      <section className="bg-gradient-to-r from-primary/10 via-surface-container-lowest to-secondary/10 rounded-3xl p-6 shadow-sm border border-primary/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex flex-col gap-1.5 max-w-lg">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-primary text-on-primary font-bold">
+              AI Assessment
+            </span>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-container border border-outline-variant/40 text-on-surface-variant font-medium">
+              Experimental • student-stress-v2-clean
+            </span>
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-on-surface-variant ml-1">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  aiStatus === 'ONLINE'
+                    ? 'bg-emerald-500 animate-pulse'
+                    : aiStatus === 'OFFLINE'
+                    ? 'bg-rose-500'
+                    : 'bg-amber-500'
+                }`}
+              />
+              <span>{aiStatus === 'ONLINE' ? 'Online' : aiStatus === 'OFFLINE' ? 'Offline' : 'Checking'}</span>
+            </span>
+          </div>
+          <h3 className="font-headline font-bold text-base text-on-background">
+            Comprehensive 19-Feature Wellbeing Check
+          </h3>
+          <p className="text-xs text-on-surface-variant leading-relaxed">
+            Explore a multidimensional evaluation of academic workload, physical rest, social factors, and living equilibrium with our scientifically hardened, non-clinical AI model.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onNavigateTab('assessment')}
+          className="px-5 py-2.5 rounded-full bg-primary text-on-primary text-xs font-bold hover:bg-primary-container shadow-sm flex items-center gap-1.5 shrink-0"
+        >
+          <span>Start Assessment</span>
+          <span className="material-symbols-outlined text-sm">arrow_forward</span>
+        </button>
       </section>
 
       {/* Your Wellbeing Journey (Non-Clinical Personal Trends) */}

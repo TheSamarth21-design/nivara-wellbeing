@@ -13,6 +13,7 @@ import { WhatIfSimulatorView } from '../../features/simulator/WhatIfSimulatorVie
 import { CampusRadarView } from '../../features/radar/CampusRadarView';
 import { PrivacyCenterView } from '../../features/privacy/PrivacyCenterView';
 import { SilentCounsellorView } from '../../features/counsellor/SilentCounsellorView';
+import { StressAssessmentView } from '../../features/assessment/StressAssessmentView';
 import { SafetyModeModal } from '../../features/safety/SafetyModeModal';
 import { BreathingModal } from '../../features/home/BreathingModal';
 import { ErrorBoundary } from '../../components/common/ErrorBoundary';
@@ -107,6 +108,13 @@ export const StudentDashboardPage: React.FC = () => {
           {activeTab === 'simulator' && <WhatIfSimulatorView />}
           {activeTab === 'radar' && <CampusRadarView />}
           {activeTab === 'counsellor' && <SilentCounsellorView role="STUDENT" />}
+          {activeTab === 'assessment' && (
+            <StressAssessmentView
+              wellbeingId={wellbeingId}
+              onBackToDashboard={() => setActiveTab('home')}
+              onOpenBreathing={() => setIsBreathingOpen(true)}
+            />
+          )}
           {activeTab === 'privacy' && (
             <PrivacyCenterView onLoggedOut={logout} />
           )}
