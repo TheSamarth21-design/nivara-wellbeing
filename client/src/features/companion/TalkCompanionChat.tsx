@@ -1,17 +1,33 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ApiClient } from '../../lib/apiClient';
 import { AIMessageItem } from '../../types';
+import { useLanguage } from '../../context/LanguageContext';
+import { useAuth } from '../../context/AuthContext';
 
 interface Props {
   onOpenSafety: () => void;
   onRequestCounsellor: () => void;
+  onNavigateTab?: (tab: string) => void;
 }
 
-export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCounsellor }) => {
-  const [messages, setMessages] = useState<AIMessageItem[]>([]);
+export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCounsellor, onNavigateTab }) => {
+  const { t, language } = useLanguage();
+  const { user, profile } = useAuth();
+  const storageKey = `nivara_chat_${profile?.wellbeingId || user?.uid || 'guest'}`;
+
+  const [messages, setMessages] = useState<AIMessageItem[]>(() => {
+    try {
+      const cached = localStorage.getItem(storageKey);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
   const [memories, setMemories] = useState<any[]>([]);
   const [showMemoryDrawer, setShowMemoryDrawer] = useState(false);
   const [feedbackMap, setFeedbackMap] = useState<
@@ -20,29 +36,33 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
+  // Check if today's checkin was done
+  const todayStr = new Date().toISOString().split('T')[0];
+  const lastCheckinDate = localStorage.getItem('nivara_last_checkin_date');
+  const hasCompletedCheckinToday = lastCheckinDate === todayStr;
+
+  // Detect stress signals in conversation
+  const hasStressSignals = messages.some((m) =>
+    /stress|anxious|anxiety|pressure|overwhelm|tired|can't sleep|insomnia|depressed|sad|panic|burnout|exhausted|तनाव|चिंता|थक/i.test(
+      m.message
+    )
+  );
+
   useEffect(() => {
     loadMessages();
     loadMemories();
+  }, [storageKey]);
 
-    // Initialize Web Speech API if supported
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = 'en-IN'; // Multi-lingual Indian English
-
-      recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
-        setIsListening(false);
-      };
-
-      recognition.onerror = () => setIsListening(false);
-      recognition.onend = () => setIsListening(false);
-      recognitionRef.current = recognition;
+  // Persist messages whenever updated
+  useEffect(() => {
+    if (messages.length > 0) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(messages));
+      } catch (e) {
+        console.error('Failed to persist chat messages:', e);
+      }
     }
-  }, []);
+  }, [messages, storageKey]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -51,9 +71,11 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
   const loadMessages = async () => {
     try {
       const res = await ApiClient.getAIMessages();
-      setMessages(res.messages || []);
+      if (res?.messages && res.messages.length > 0) {
+        setMessages(res.messages);
+      }
     } catch (e) {
-      console.error(e);
+      console.error('Could not sync remote messages:', e);
     }
   };
 
@@ -67,20 +89,64 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
   };
 
   const handleToggleVoice = () => {
-    if (!recognitionRef.current) {
-      alert('Speech recognition is not supported in this browser. Please type your message.');
+    setMicError(null);
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setMicError(t('talk_mic_unsupported'));
+      setTimeout(() => setMicError(null), 4000);
       return;
     }
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    } else {
+
+    if (isListening && recognitionRef.current) {
       try {
-        recognitionRef.current.start();
+        recognitionRef.current.stop();
+      } catch {}
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      // Match active app language
+      recognition.lang = language === 'hi' ? 'hi-IN' : language === 'mr' ? 'mr-IN' : 'en-IN';
+
+      recognition.onstart = () => {
         setIsListening(true);
-      } catch {
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results?.[0]?.[0]?.transcript || '';
+        if (transcript) {
+          setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        }
         setIsListening(false);
-      }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event.error);
+        setIsListening(false);
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setMicError(t('talk_mic_permission_denied'));
+        } else {
+          setMicError(`Voice error: ${event.error || 'Check microphone'}`);
+        }
+        setTimeout(() => setMicError(null), 4000);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      console.error('Speech recognition start failed:', err);
+      setIsListening(false);
+      setMicError(t('talk_mic_permission_denied'));
+      setTimeout(() => setMicError(null), 4000);
     }
   };
 
@@ -151,10 +217,26 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
   };
 
   const quickPrompts = [
-    'I am feeling overwhelmed with exam prep',
-    'I cannot sleep because of racing thoughts',
-    'Can we do a quick grounding exercise?',
-    'I feel isolated on campus'
+    language === 'hi'
+      ? 'परीक्षा की तैयारी से बहुत तनाव महसूस हो रहा है'
+      : language === 'mr'
+      ? 'परीक्षेच्या दबावामुळे खूप ताण जाणवतो आहे'
+      : 'I am feeling overwhelmed with exam prep',
+    language === 'hi'
+      ? 'मन में लगातार विचारों के कारण नींद नहीं आ रही है'
+      : language === 'mr'
+      ? 'सतत विचार सुरू असल्यामुळे झोप येत नाही'
+      : 'I cannot sleep because of racing thoughts',
+    language === 'hi'
+      ? 'क्या हम एक छोटा शांतता व्यायाम कर सकते हैं?'
+      : language === 'mr'
+      ? 'आपण एक छोटा शांतता व्यायाम करू शकतो का?'
+      : 'Can we do a quick grounding exercise?',
+    language === 'hi'
+      ? 'कैंपस में थोड़ा अकेलापन महसूस होता है'
+      : language === 'mr'
+      ? 'कॅम्पसमध्ये थोडे एकटेपणा जाणवतो'
+      : 'I feel isolated on campus'
   ];
 
   return (
@@ -168,7 +250,9 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
             className="w-8 h-8 rounded-full object-cover shadow-sm border border-outline-variant/30"
           />
           <div>
-            <h2 className="font-headline font-semibold text-sm text-on-background">Nivara Companion</h2>
+            <h2 className="font-headline font-semibold text-sm text-on-background">
+              {t('talk_title')}
+            </h2>
             <span className="text-[10px] text-primary flex items-center gap-1 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               Active & Private
@@ -182,7 +266,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
             className="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-variant text-xs text-on-surface font-medium flex items-center gap-1"
           >
             <span className="material-symbols-outlined text-sm">psychology</span>
-            <span>AI Memory ({memories.length})</span>
+            <span>{t('talk_memory_label')} ({memories.length})</span>
           </button>
 
           <button
@@ -190,7 +274,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
             className="px-3 py-1.5 rounded-full bg-secondary-container/40 hover:bg-secondary-container text-xs text-on-secondary-container font-semibold flex items-center gap-1"
           >
             <span className="material-symbols-outlined text-sm">support_agent</span>
-            <span>Silent Counsellor</span>
+            <span>{t('tab_support')}</span>
           </button>
         </div>
       </div>
@@ -199,9 +283,9 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
       {showMemoryDrawer && (
         <div className="p-4 my-2 rounded-2xl bg-surface-container border border-outline-variant/40 flex flex-col gap-2 animate-fadeIn">
           <div className="flex justify-between items-center">
-            <span className="text-xs font-bold text-on-background">Controlled AI Memory</span>
+            <span className="text-xs font-bold text-on-background">{t('talk_memory_label')}</span>
             <button onClick={handleClearMemory} className="text-[11px] text-error hover:underline">
-              Clear Memory
+              {t('talk_clear_memory')}
             </button>
           </div>
           <p className="text-[11px] text-on-surface-variant">
@@ -224,6 +308,35 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
         </div>
       )}
 
+      {/* Mic Error Banner */}
+      {micError && (
+        <div className="mt-2 p-2.5 rounded-xl bg-error-container text-on-error-container text-xs flex items-center gap-2 animate-fadeIn">
+          <span className="material-symbols-outlined text-sm">error</span>
+          <span>{micError}</span>
+        </div>
+      )}
+
+      {/* Contextual Wellbeing Check-in Nudge */}
+      {hasStressSignals && !hasCompletedCheckinToday && (
+        <div className="my-2 p-3 rounded-2xl bg-primary-container/25 border border-primary/30 flex items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">🌿</span>
+            <p className="text-xs text-on-surface font-medium leading-relaxed">
+              {t('talk_wellbeing_nudge')}
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              if (onNavigateTab) onNavigateTab('wellbeing');
+              else onRequestCounsellor();
+            }}
+            className="px-3.5 py-1.5 rounded-full bg-primary text-on-primary text-xs font-semibold shrink-0 hover:opacity-90 shadow-sm transition-all"
+          >
+            {t('talk_take_checkin')}
+          </button>
+        </div>
+      )}
+
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-3">
         {messages.length === 0 && (
@@ -232,10 +345,10 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
               🌿
             </div>
             <h3 className="font-headline font-bold text-base text-on-background">
-              I am here with you
+              {t('talk_title')}
             </h3>
             <p className="text-xs text-on-surface-variant max-w-sm">
-              You can talk freely or use voice input to share whatever is on your mind.
+              {t('talk_desc')}
             </p>
             <div className="flex flex-wrap justify-center gap-2 mt-2">
               {quickPrompts.map((p, idx) => (
@@ -281,13 +394,13 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
                       onClick={onRequestCounsellor}
                       className="px-3 py-1.5 rounded-full bg-secondary text-on-secondary text-[11px] font-semibold"
                     >
-                      Connect with Counsellor
+                      {t('tab_support')}
                     </button>
                   </div>
                 )}
               </div>
 
-              {/* Part 11: Feedback Loop on Assistant Responses */}
+              {/* Feedback Loop on Assistant Responses */}
               {!isUser && !isRed && (
                 <div className="mt-1 flex flex-col gap-1 px-1">
                   {!fb?.submitted && !fb?.showOptions && (
@@ -367,7 +480,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
               ? 'bg-error text-on-error animate-pulse shadow-lg ring-4 ring-error/30'
               : 'bg-surface-container hover:bg-surface-variant text-on-surface'
           }`}
-          title={isListening ? 'Listening... tap to stop' : 'Tap to speak (Speech-to-Text)'}
+          title={isListening ? t('talk_listening') : 'Tap to speak (Speech-to-Text)'}
         >
           <span className="material-symbols-outlined text-lg">
             {isListening ? 'mic_off' : 'mic'}
@@ -376,7 +489,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
 
         <input
           type="text"
-          placeholder={isListening ? 'Listening to your voice...' : 'Share your thoughts gently...'}
+          placeholder={isListening ? t('talk_listening') : t('talk_input_placeholder')}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           className="flex-1 px-5 py-3.5 rounded-full bg-surface-container-lowest border border-outline-variant/60 text-xs focus:outline-none focus:border-primary text-on-background shadow-sm"

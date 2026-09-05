@@ -72,8 +72,6 @@ export const FEATURE_BOUNDS: Record<keyof CleanStressFeatures, { min: number; ma
 /**
  * Pure transformation mapper for active Nivara student wellbeing assessment.
  * Validates all 19 clean questionnaire features against model training bounds.
- * Excludes legacy dataset feature: blood_pressure excluded for leakage hardening
- * (not collected or used by Nivara).
  * Strictly guarantees whitelist-only construction for student-stress-v2-clean.
  */
 export function mapQuestionnaireToModelPayload(

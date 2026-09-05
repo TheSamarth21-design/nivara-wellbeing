@@ -9,11 +9,9 @@ import { BottomNavBar } from '../../components/layout/BottomNavBar';
 import { EmotionalCenter } from '../../features/home/EmotionalCenter';
 import { TalkCompanionChat } from '../../features/companion/TalkCompanionChat';
 import { DigitalTwinView } from '../../features/twin/DigitalTwinView';
-import { WhatIfSimulatorView } from '../../features/simulator/WhatIfSimulatorView';
-import { CampusRadarView } from '../../features/radar/CampusRadarView';
 import { PrivacyCenterView } from '../../features/privacy/PrivacyCenterView';
 import { SilentCounsellorView } from '../../features/counsellor/SilentCounsellorView';
-import { StressAssessmentView } from '../../features/assessment/StressAssessmentView';
+import { MyWellbeingView } from '../../features/assessment/MyWellbeingView';
 import { SafetyModeModal } from '../../features/safety/SafetyModeModal';
 import { BreathingModal } from '../../features/home/BreathingModal';
 import { ErrorBoundary } from '../../components/common/ErrorBoundary';
@@ -96,26 +94,28 @@ export const StudentDashboardPage: React.FC = () => {
               onUpdatePreferredName={handleUpdateName}
             />
           )}
+          {(activeTab === 'wellbeing' || activeTab === 'assessment') && (
+            <MyWellbeingView
+              wellbeingId={wellbeingId}
+              onBackToDashboard={() => setActiveTab('home')}
+              onOpenBreathing={() => setIsBreathingOpen(true)}
+              onCheckinSubmitted={loadAppState}
+            />
+          )}
           {activeTab === 'talk' && (
             <TalkCompanionChat
               onOpenSafety={() => setIsSafetyOpen(true)}
-              onRequestCounsellor={() => setActiveTab('counsellor')}
+              onRequestCounsellor={() => setActiveTab('support')}
+              onNavigateTab={setActiveTab}
             />
           )}
           {activeTab === 'twin' && (
             <DigitalTwinView twinStatus={twinStatus} onNavigateTab={setActiveTab} />
           )}
-          {activeTab === 'simulator' && <WhatIfSimulatorView />}
-          {activeTab === 'radar' && <CampusRadarView />}
-          {activeTab === 'counsellor' && <SilentCounsellorView role="STUDENT" />}
-          {activeTab === 'assessment' && (
-            <StressAssessmentView
-              wellbeingId={wellbeingId}
-              onBackToDashboard={() => setActiveTab('home')}
-              onOpenBreathing={() => setIsBreathingOpen(true)}
-            />
+          {(activeTab === 'support' || activeTab === 'counsellor') && (
+            <SilentCounsellorView role="STUDENT" onNavigateTab={setActiveTab} />
           )}
-          {activeTab === 'privacy' && (
+          {(activeTab === 'profile' || activeTab === 'privacy') && (
             <PrivacyCenterView onLoggedOut={logout} />
           )}
         </ErrorBoundary>

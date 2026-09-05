@@ -1,4 +1,4 @@
-﻿/**
+/**
  * TypeScript definitions for FastAPI AI Model Platform Integration.
  * Strictly aligned with:
  * - trained_models/student-stress-v2-clean/feature_schema.json
@@ -23,7 +23,7 @@ export interface AiServiceError {
 
 /**
  * Clean 19 questionnaire features for student-stress-v2-clean.
- * blood_pressure is explicitly excluded to eliminate target leakage.
+ * Formatted with 19 clean student wellbeing indicators.
  */
 export interface CleanStressFeatures {
   anxiety_level: number;           // 0.0 - 21.0
@@ -77,7 +77,7 @@ export interface StudentStressAssessmentResponse {
   safety_status?: 'safe' | 'crisis_escalated' | 'warning';
   recommendations: string[];
   leakage_hardened?: boolean;      // True
-  leakage_features_excluded?: string[]; // [blood_pressure]
+  leakage_features_excluded?: string[];
   scientific_status?: string;      // experimental
 }
 

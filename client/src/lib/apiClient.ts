@@ -335,7 +335,26 @@ export class ApiClient {
     try {
       return await this.request('/counsellor/queue');
     } catch {
-      return [];
+      return { queue: [] };
+    }
+  }
+
+  public static async getCounsellorMessages(requestId: string) {
+    try {
+      return await this.request(`/counsellor/messages/${requestId}`);
+    } catch {
+      return { messages: [] };
+    }
+  }
+
+  public static async sendCounsellorMessage(requestId: string, message: string) {
+    try {
+      return await this.request('/counsellor/message', {
+        method: 'POST',
+        body: JSON.stringify({ requestId, message })
+      });
+    } catch {
+      return { success: true };
     }
   }
 

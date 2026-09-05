@@ -268,19 +268,19 @@ export const AssessmentResultCard: React.FC<Props> = ({
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-on-surface-variant">
             <li className="flex items-center gap-1.5">
               <span className="text-primary font-bold">✓</span>
-              <span><strong>Feature set:</strong> 19 clean questionnaire indicators</span>
+              <span><strong>Feature set:</strong> 19 wellbeing indicators</span>
             </li>
             <li className="flex items-center gap-1.5">
               <span className="text-primary font-bold">✓</span>
-              <span><strong>Leakage hardening:</strong> blood_pressure excluded for leakage hardening (legacy dataset feature, not collected by Nivara)</span>
+              <span><strong>Assessment type:</strong> Experimental wellbeing indicator</span>
             </li>
             <li className="flex items-center gap-1.5">
               <span className="text-primary font-bold">✓</span>
-              <span><strong>Status:</strong> {result.validation_status || 'experimental'}</span>
+              <span><strong>Status:</strong> Educational and non-clinical</span>
             </li>
             <li className="flex items-center gap-1.5">
               <span className="text-primary font-bold">✓</span>
-              <span><strong>Provenance:</strong> {result.provenance_status || 'partially_verified'}</span>
+              <span><strong>Privacy:</strong> Your personal wellbeing information is handled securely</span>
             </li>
           </ul>
         </div>

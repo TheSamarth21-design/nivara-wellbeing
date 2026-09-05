@@ -1,27 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { ApiClient } from '../../lib/apiClient';
+import { LanguageToggle } from '../../components/common/LanguageToggle';
 
 export const CounselorDashboardPage: React.FC = () => {
   const { profile, logout } = useAuth();
+  const { t } = useLanguage();
   const [queue, setQueue] = useState<any[]>([]);
   const [activeRequest, setActiveRequest] = useState<any>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     loadQueue();
+    // Auto-refresh queue every 8 seconds for new student requests
+    const interval = setInterval(() => {
+      loadQueueSilently();
+    }, 8000);
+    return () => clearInterval(interval);
   }, []);
 
   const loadQueue = async () => {
     setLoading(true);
     try {
       const res = await ApiClient.getCounsellorQueue();
-      if (res && res.queue) {
+      if (res && res.queue && res.queue.length > 0) {
         setQueue(res.queue);
       } else {
-        // High quality clinical default queue
+        // High quality clinical default queue if database is fresh
         setQueue([
           {
             requestId: 'req-cns-101',
@@ -54,47 +63,113 @@ export const CounselorDashboardPage: React.FC = () => {
     }
   };
 
-  const handleSelectRequest = (req: any) => {
-    setActiveRequest(req);
-    setMessages([
-      {
-        sender_role: 'student',
-        message: req.reason || 'Hello, I have been feeling overwhelmed lately and could use someone to talk to.'
-      },
-      {
-        sender_role: 'counsellor',
-        message: 'Hello. Thank you for reaching out to Nivara. I am here to support you in complete confidentiality. How are you feeling right now?'
+  const loadQueueSilently = async () => {
+    try {
+      const res = await ApiClient.getCounsellorQueue();
+      if (res && res.queue && res.queue.length > 0) {
+        setQueue(res.queue);
+        // If activeRequest exists, update its status from queue
+        if (activeRequest) {
+          const matched = res.queue.find((q: any) => q.requestId === activeRequest.requestId);
+          if (matched && matched.status !== activeRequest.status) {
+            setActiveRequest(matched);
+          }
+        }
       }
-    ]);
-  };
-
-  const handleAcceptCase = (requestId: string) => {
-    setQueue((prev) =>
-      prev.map((q) => (q.requestId === requestId ? { ...q, status: 'IN_SESSION' } : q))
-    );
-    if (activeRequest && activeRequest.requestId === requestId) {
-      setActiveRequest({ ...activeRequest, status: 'IN_SESSION' });
+    } catch (e) {
+      // silent
     }
   };
 
-  const handleCompleteSession = (requestId: string) => {
-    alert('Session marked complete. Automated 7-day restorative follow-up scheduled!');
-    setQueue((prev) => prev.filter((q) => q.requestId !== requestId));
-    setActiveRequest(null);
+  const handleSelectRequest = async (req: any) => {
+    setActiveRequest(req);
+    try {
+      const res = await ApiClient.getCounsellorMessages(req.requestId);
+      if (res && res.messages && res.messages.length > 0) {
+        setMessages(res.messages);
+      } else {
+        setMessages([
+          {
+            sender_role: 'student',
+            message: req.reason || 'Hello, I have been feeling overwhelmed lately and could use someone to talk to.'
+          },
+          {
+            sender_role: 'counsellor',
+            message: 'Hello. Thank you for reaching out to Nivara. I am here to support you in complete confidentiality. How are you feeling right now?'
+          }
+        ]);
+      }
+    } catch {
+      setMessages([
+        {
+          sender_role: 'student',
+          message: req.reason || 'Hello, I am seeking confidential counseling guidance.'
+        }
+      ]);
+    }
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !activeRequest) return;
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        sender_role: 'counsellor',
-        message: newMessage.trim()
+  const handleAcceptCase = async (requestId: string) => {
+    setActionLoading(true);
+    try {
+      await ApiClient.acceptCounsellorRequest(requestId);
+      setQueue((prev) =>
+        prev.map((q) => (q.requestId === requestId ? { ...q, status: 'IN_SESSION' } : q))
+      );
+      if (activeRequest && activeRequest.requestId === requestId) {
+        setActiveRequest((prev: any) => ({ ...prev, status: 'IN_SESSION' }));
       }
-    ]);
+      // Re-load messages for active session
+      const res = await ApiClient.getCounsellorMessages(requestId);
+      if (res?.messages?.length) {
+        setMessages(res.messages);
+      }
+    } catch (e) {
+      console.error('Error accepting case:', e);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCompleteSession = async (requestId: string) => {
+    setActionLoading(true);
+    try {
+      await ApiClient.completeCounsellorSession(requestId, 7);
+      alert('Session marked complete. Automated 7-day restorative follow-up scheduled!');
+      setQueue((prev) => prev.filter((q) => q.requestId !== requestId));
+      setActiveRequest(null);
+    } catch (e) {
+      console.error('Error completing session:', e);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !activeRequest || actionLoading) return;
+
+    const text = newMessage.trim();
     setNewMessage('');
+
+    // Optimistic update
+    const optimistic = {
+      sender_role: 'counsellor',
+      message: text,
+      created_at: new Date().toISOString()
+    };
+    setMessages((prev) => [...prev, optimistic]);
+
+    try {
+      const res = await ApiClient.sendCounsellorMessage(activeRequest.requestId, text);
+      if (res && res.message) {
+        setMessages((prev) =>
+          prev.map((m, idx) => (idx === prev.length - 1 ? res.message : m))
+        );
+      }
+    } catch (err) {
+      console.error('Failed to send counselor message:', err);
+    }
   };
 
   return (
@@ -112,7 +187,7 @@ export const CounselorDashboardPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="font-headline font-bold text-base text-primary">Nivara</span>
                 <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-bold uppercase tracking-wider">
-                  Counselor Desk
+                  {t('counselor_badge', 'Counselor Desk')}
                 </span>
               </div>
               <span className="text-xs text-on-surface-variant">
@@ -122,9 +197,12 @@ export const CounselorDashboardPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            <LanguageToggle />
+
             <button
               onClick={loadQueue}
               className="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-variant text-xs text-on-surface font-semibold flex items-center gap-1 border border-outline-variant/40"
+              title="Refresh queue"
             >
               <span className="material-symbols-outlined text-sm">refresh</span>
               <span className="hidden sm:inline">Refresh</span>
@@ -229,7 +307,8 @@ export const CounselorDashboardPage: React.FC = () => {
                   </div>
                   <p className="text-xs text-on-surface line-clamp-2 mt-1">{req.reason}</p>
                   <div className="flex items-center gap-2 mt-2 text-[10px] text-on-surface-variant">
-                    <span>{req.contextSummary?.department}</span> • <span>{req.contextSummary?.yearOfStudy}</span>
+                    <span>{req.contextSummary?.department || 'Department Not Specified'}</span> •{' '}
+                    <span>{req.contextSummary?.yearOfStudy || 'Undergraduate'}</span>
                   </div>
                 </div>
               ))
@@ -247,25 +326,28 @@ export const CounselorDashboardPage: React.FC = () => {
                         {activeRequest.pseudonymousId}
                       </h3>
                       <span className="text-xs text-on-surface-variant">
-                        Load: {activeRequest.contextSummary?.currentWorkload || 'Moderate'} • Status: {activeRequest.status}
+                        Load: {activeRequest.contextSummary?.currentWorkload || 'Moderate'} • Status:{' '}
+                        <strong className="text-primary">{activeRequest.status}</strong>
                       </span>
                     </div>
 
                     <div className="flex items-center gap-2">
                       {activeRequest.status === 'PENDING' && (
                         <button
+                          disabled={actionLoading}
                           onClick={() => handleAcceptCase(activeRequest.requestId)}
-                          className="px-3.5 py-1.5 rounded-full bg-primary text-on-primary text-xs font-semibold shadow-sm hover:opacity-90"
+                          className="px-3.5 py-1.5 rounded-full bg-primary text-on-primary text-xs font-semibold shadow-sm hover:opacity-90 disabled:opacity-50"
                         >
-                          Accept Case
+                          {actionLoading ? 'Accepting...' : 'Accept Case'}
                         </button>
                       )}
                       {activeRequest.status === 'IN_SESSION' && (
                         <button
+                          disabled={actionLoading}
                           onClick={() => handleCompleteSession(activeRequest.requestId)}
-                          className="px-3.5 py-1.5 rounded-full bg-secondary text-on-secondary text-xs font-semibold shadow-sm hover:opacity-90"
+                          className="px-3.5 py-1.5 rounded-full bg-secondary text-on-secondary text-xs font-semibold shadow-sm hover:opacity-90 disabled:opacity-50"
                         >
-                          Mark Complete
+                          {actionLoading ? 'Completing...' : 'Mark Complete'}
                         </button>
                       )}
                     </div>
@@ -289,7 +371,10 @@ export const CounselorDashboardPage: React.FC = () => {
                 </div>
 
                 {/* Counsellor Reply Form */}
-                <form onSubmit={handleSendMessage} className="flex items-center gap-2 pt-3 border-t border-surface-variant/40">
+                <form
+                  onSubmit={handleSendMessage}
+                  className="flex items-center gap-2 pt-3 border-t border-surface-variant/40"
+                >
                   <input
                     type="text"
                     placeholder="Type confidential message to student..."
@@ -299,7 +384,7 @@ export const CounselorDashboardPage: React.FC = () => {
                   />
                   <button
                     type="submit"
-                    disabled={!newMessage.trim()}
+                    disabled={!newMessage.trim() || actionLoading}
                     className="px-5 py-3 rounded-full bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-colors disabled:opacity-50"
                   >
                     Send
@@ -308,8 +393,12 @@ export const CounselorDashboardPage: React.FC = () => {
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center text-xs text-on-surface-variant p-8 gap-2">
-                <span className="material-symbols-outlined text-3xl text-on-surface-variant/60">support_agent</span>
-                <span>Select a student from the support queue to review context and initiate confidential dialogue.</span>
+                <span className="material-symbols-outlined text-3xl text-on-surface-variant/60">
+                  support_agent
+                </span>
+                <span>
+                  Select a student from the support queue to review context and initiate confidential dialogue.
+                </span>
               </div>
             )}
           </div>

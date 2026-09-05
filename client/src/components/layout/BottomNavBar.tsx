@@ -12,11 +12,11 @@ export const BottomNavBar: React.FC<Props> = ({ activeTab, onTabChange }) => {
 
   const tabs = [
     { id: 'home', label: t('nav_home', 'Home'), icon: 'home_health' },
+    { id: 'wellbeing', label: t('nav_wellbeing', 'My Wellbeing'), icon: 'spa' },
     { id: 'talk', label: t('nav_talk', 'Talk'), icon: 'forum' },
     { id: 'twin', label: t('nav_twin', 'My Twin'), icon: 'bubble_chart' },
-    { id: 'simulator', label: t('nav_simulator', 'Simulator'), icon: 'alt_route' },
-    { id: 'radar', label: t('nav_radar', 'Campus'), icon: 'radar' },
-    { id: 'privacy', label: t('nav_me', 'Me'), icon: 'person' }
+    { id: 'support', label: t('nav_support', 'Support'), icon: 'support_agent' },
+    { id: 'profile', label: t('nav_profile', 'Profile'), icon: 'person' }
   ];
 
   return (
