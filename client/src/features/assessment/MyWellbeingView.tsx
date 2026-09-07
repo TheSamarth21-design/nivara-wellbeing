@@ -3,7 +3,8 @@ import { QuestionnaireFormState, mapQuestionnaireToModelPayload } from './assess
 import { StudentStressAssessmentResponse, AiApiStatus, AiServiceError } from '../../types/ai';
 import { AiApiClient } from '../../services/aiApi';
 import { ApiClient } from '../../lib/apiClient';
-import { AssessmentResultCard } from './AssessmentResultCard';
+import { checkinService } from '../../services/checkinService';
+import { AssessmentResultCard, deriveStressMetrics } from './AssessmentResultCard';
 import { useLanguage } from '../../context/LanguageContext';
 
 interface Props {
@@ -74,6 +75,7 @@ export const MyWellbeingView: React.FC<Props> = ({
       setAiStatus(status);
     });
 
+    // 1. Fast initial load from local storage
     try {
       const saved = localStorage.getItem(`nivara_today_record_${wellbeingId}_${todayStr}`);
       if (saved) {
@@ -87,6 +89,25 @@ export const MyWellbeingView: React.FC<Props> = ({
     } catch (e) {
       console.error('Error reading today wellbeing record:', e);
     }
+
+    // 2. Authoritative check from Firestore
+    checkinService.getTodayCheckin().then((todayCheckin) => {
+      if (todayCheckin) {
+        const record = {
+          date: todayCheckin.date,
+          result: (todayCheckin.aiResult as any) || null,
+          formData: (todayCheckin.formData as any) || null,
+          timestamp: todayCheckin.createdAt.toISOString()
+        };
+        setCompletedRecord(record);
+        setHasCompletedToday(true);
+        if (todayCheckin.formData) {
+          setFormData(todayCheckin.formData as any);
+        }
+      }
+    }).catch((err) => {
+      console.warn("Could not check today's check-in status from Firestore:", err);
+    });
   }, [wellbeingId, todayStr]);
 
   const updateField = (field: keyof QuestionnaireFormState, value: any) => {
@@ -128,11 +149,11 @@ export const MyWellbeingView: React.FC<Props> = ({
 
     setLoading(true);
     try {
-      // 1. Run AI Inference (FastAPI student-stress-v2-clean model)
+      // 1. Run AI Inference (Render platform: student-stress-v2-clean model)
       const aiResult = await AiApiClient.assessStress(validation.payload);
       setAssessmentResult(aiResult);
 
-      // 2. Derive composite metrics for Node.js backend check-in
+      // 2. Derive composite metrics for wellbeing check-in
       const sleepQualityStr =
         (formData.sleep_quality ?? 3) >= 4 ? 'Good' : (formData.sleep_quality ?? 3) >= 2 ? 'Okay' : 'Poor';
 
@@ -155,15 +176,21 @@ export const MyWellbeingView: React.FC<Props> = ({
       const depPen = Math.min(2, Math.floor((formData.depression ?? 5) / 13));
       const esteemBonus = (formData.self_esteem ?? 20) >= 20 ? 1 : 0;
       const derivedScore = Math.max(1, Math.min(5, 4 - anxietyPen - depPen + esteemBonus));
+      const moodTierStr = derivedScore >= 4 ? 'good' : derivedScore >= 3 ? 'okay' : 'not_great';
 
-      // 3. Save to Node.js backend
-      await ApiClient.submitEnhancedCheckin({
+      // 3. Save directly to Firebase Firestore (throws on failure, no silent fake success)
+      await checkinService.submitCheckin({
         moodScore: derivedScore,
-        energyLevel: energyLevelStr as any,
-        stressLevel: stressLevelStr as any,
-        sleepQuality: sleepQualityStr as any,
-        note: formData.text_reflection?.trim() || undefined
-      }).catch((e) => console.warn('Node backend checkin sync:', e));
+        moodTier: moodTierStr,
+        energyLevel: energyLevelStr,
+        stressLevel: stressLevelStr,
+        sleepQuality: sleepQualityStr,
+        feelingTags: [],
+        note: formData.text_reflection?.trim() || '',
+        date: todayStr,
+        aiResult: aiResult as unknown as Record<string, unknown>,
+        formData: formData as unknown as Record<string, unknown>,
+      });
 
       // 4. Save today's record locally
       const record = {
@@ -249,15 +276,15 @@ export const MyWellbeingView: React.FC<Props> = ({
             <span className="text-xs font-bold text-on-background">Today's Reflection Snapshot:</span>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
               <div className="p-2.5 rounded-xl bg-surface-container flex flex-col">
-                <span className="text-[10px] text-on-surface-variant">Pattern</span>
-                <span className="font-bold text-primary capitalize">
-                  {completedRecord.result.stress_prediction?.replace('_', ' ') || 'Classified'}
+                <span className="text-[10px] text-on-surface-variant">Stress Level</span>
+                <span className="font-bold text-primary">
+                  {deriveStressMetrics(completedRecord.result).category}
                 </span>
               </div>
               <div className="p-2.5 rounded-xl bg-surface-container flex flex-col">
-                <span className="text-[10px] text-on-surface-variant">Confidence</span>
+                <span className="text-[10px] text-on-surface-variant">Stress</span>
                 <span className="font-bold text-on-background">
-                  {Math.round((completedRecord.result.confidence || 0.8) * 100)}%
+                  {deriveStressMetrics(completedRecord.result).percentage}%
                 </span>
               </div>
               <div className="p-2.5 rounded-xl bg-surface-container flex flex-col">
@@ -282,7 +309,7 @@ export const MyWellbeingView: React.FC<Props> = ({
               className="w-full sm:flex-1 py-3 rounded-full bg-primary text-on-primary text-xs font-bold shadow-md hover:bg-primary-container transition-colors flex items-center justify-center gap-2"
             >
               <span className="material-symbols-outlined text-sm">visibility</span>
-              <span>{t('view_today_pattern', "View Today's Wellbeing Pattern")}</span>
+              <span>{t('view_your_stress_level', 'View Your Stress Level')}</span>
             </button>
 
             <button

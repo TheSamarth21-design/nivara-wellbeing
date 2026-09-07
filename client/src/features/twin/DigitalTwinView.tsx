@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { TwinStatus } from '../../types';
 import { ApiClient } from '../../lib/apiClient';
+import { checkinService, StoredCheckin } from '../../services/checkinService';
 import { useLanguage } from '../../context/LanguageContext';
 
 interface Props {
@@ -12,6 +13,7 @@ export const DigitalTwinView: React.FC<Props> = ({ twinStatus, onNavigateTab }) 
   const { t } = useLanguage();
   const wellbeingId = ApiClient.getWellbeingId();
   const [latestRecord, setLatestRecord] = useState<any>(null);
+  const [storedCheckins, setStoredCheckins] = useState<StoredCheckin[]>([]);
 
   useEffect(() => {
     try {
@@ -22,6 +24,21 @@ export const DigitalTwinView: React.FC<Props> = ({ twinStatus, onNavigateTab }) 
     } catch {
       setLatestRecord(null);
     }
+
+    checkinService.getCheckins().then((list) => {
+      setStoredCheckins(list);
+      if (list.length > 0 && !latestRecord) {
+        const newest = list[0];
+        setLatestRecord({
+          date: newest.date,
+          result: newest.aiResult || null,
+          formData: newest.formData || null,
+          timestamp: newest.createdAt.toISOString()
+        });
+      }
+    }).catch((err) => {
+      console.warn('Could not fetch checkins for Digital Twin:', err);
+    });
   }, [wellbeingId]);
 
   // Graceful loading state with shimmering skeleton
@@ -50,13 +67,20 @@ export const DigitalTwinView: React.FC<Props> = ({ twinStatus, onNavigateTab }) 
     );
   }
 
-  const checkinCount = typeof twinStatus?.checkinCount === 'number' ? twinStatus.checkinCount : latestRecord ? 1 : 0;
-  const isColdStart = checkinCount < 3 && !latestRecord;
-  const confidenceLevel = twinStatus?.confidenceLevel || (latestRecord ? 'Calibrated' : 'Initial');
+  const checkinCount = storedCheckins.length > 0
+    ? storedCheckins.length
+    : typeof twinStatus?.checkinCount === 'number'
+      ? twinStatus.checkinCount
+      : latestRecord ? 1 : 0;
+
+  const isColdStart = checkinCount < 3 && !latestRecord && storedCheckins.length === 0;
+  const confidenceLevel = twinStatus?.confidenceLevel || (checkinCount >= 3 ? 'Established' : latestRecord || checkinCount > 0 ? 'Calibrated' : 'Initial');
   const currentPatternState = twinStatus?.currentPatternState || (isColdStart ? 'Cold Start' : 'Stable');
   const baselineAvg =
     typeof twinStatus?.baselineMoodAvg === 'number' && !isNaN(twinStatus.baselineMoodAvg)
       ? twinStatus.baselineMoodAvg
+      : storedCheckins.length > 0
+      ? Number((storedCheckins.reduce((acc, c) => acc + c.moodScore, 0) / storedCheckins.length).toFixed(1))
       : 3.4;
 
   const insights =
@@ -75,7 +99,13 @@ export const DigitalTwinView: React.FC<Props> = ({ twinStatus, onNavigateTab }) 
           'Take a gentle 5-minute outdoor walk between intense focus intervals.'
         ];
 
-  const recentHistory = Array.isArray(twinStatus?.recentHistory) ? twinStatus.recentHistory : [];
+  const recentHistory = storedCheckins.length > 0
+    ? storedCheckins.slice(0, 7).map((c) => ({
+        date: c.date,
+        moodTier: (c.moodTier as any) || 'okay',
+        score: c.moodScore
+      }))
+    : Array.isArray(twinStatus?.recentHistory) ? twinStatus.recentHistory : [];
 
   return (
     <div className="max-w-[900px] mx-auto px-4 py-6 flex flex-col gap-6 animate-fadeIn pb-24">

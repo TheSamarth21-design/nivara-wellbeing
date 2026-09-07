@@ -23,7 +23,7 @@ export const BottomNavBar: React.FC<Props> = ({ activeTab, onTabChange }) => {
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-surface/90 dark:bg-surface-container/90 backdrop-blur-md border-t border-surface-variant/50 shadow-lg pb-safe">
       <div className="max-w-[600px] mx-auto flex justify-around items-center px-2 py-2">
         {tabs.map((tab) => {
-          const isActive = activeTab === tab.id;
+          const isActive = activeTab === tab.id || (tab.id === 'wellbeing' && activeTab === 'assessment');
           return (
             <button
               key={tab.id}

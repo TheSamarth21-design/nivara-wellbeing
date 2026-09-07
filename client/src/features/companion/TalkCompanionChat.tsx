@@ -13,7 +13,17 @@ interface Props {
 export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCounsellor, onNavigateTab }) => {
   const { t, language } = useLanguage();
   const { user, profile } = useAuth();
-  const storageKey = `nivara_chat_${profile?.wellbeingId || user?.uid || 'guest'}`;
+  const userKey = profile?.wellbeingId || user?.uid || 'guest';
+  const storageKey = `nivara_chat_${userKey}`;
+  const conversationIdStorageKey = `nivara_conv_id_${userKey}`;
+
+  const [conversationId, setConversationId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(conversationIdStorageKey) || '';
+    } catch {
+      return '';
+    }
+  });
 
   const [messages, setMessages] = useState<AIMessageItem[]>(() => {
     try {
@@ -70,9 +80,17 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
 
   const loadMessages = async () => {
     try {
+      const cached = localStorage.getItem(storageKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+          return;
+        }
+      }
       const res = await ApiClient.getAIMessages();
-      if (res?.messages && res.messages.length > 0) {
-        setMessages(res.messages);
+      if (res && Array.isArray(res) && res.length > 0) {
+        setMessages(res);
       }
     } catch (e) {
       console.error('Could not sync remote messages:', e);
@@ -154,10 +172,11 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
     const text = textToSend || input;
     if (!text.trim() || loading) return;
 
+    const trimmed = text.trim();
     const userMsg: AIMessageItem = {
       id: Date.now().toString(),
       sender: 'user',
-      message: text,
+      message: trimmed,
       safety_tier: 'GREEN',
       created_at: new Date().toISOString()
     };
@@ -167,7 +186,18 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
     setLoading(true);
 
     try {
-      const res = await ApiClient.sendAIMessage(text);
+      const res = await ApiClient.sendAIMessage(trimmed, conversationId || undefined);
+
+      // Preserve and store conversation_id for subsequent messages in this conversation
+      if (res.conversationId && res.conversationId !== conversationId) {
+        setConversationId(res.conversationId);
+        try {
+          localStorage.setItem(conversationIdStorageKey, res.conversationId);
+        } catch (e) {
+          console.error('Failed to store conversation_id:', e);
+        }
+      }
+
       const assistantMsg: AIMessageItem = {
         id: (Date.now() + 1).toString(),
         sender: 'assistant',
@@ -181,11 +211,34 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
       if (res.safetyTier === 'RED') {
         onOpenSafety();
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('[Nivara Chat] Error processing chat response:', err);
+      const friendlyError = t(
+        'talk_error_connection',
+        "I'm having trouble connecting right now. Please try again in a moment."
+      );
+      const errorMsg: AIMessageItem = {
+        id: (Date.now() + 1).toString(),
+        sender: 'assistant',
+        message: friendlyError,
+        safety_tier: 'YELLOW',
+        created_at: new Date().toISOString()
+      };
+      setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleNewConversation = () => {
+    setConversationId('');
+    try {
+      localStorage.removeItem(conversationIdStorageKey);
+      localStorage.removeItem(storageKey);
+    } catch (e) {
+      console.error('Failed to reset conversation storage:', e);
+    }
+    setMessages([]);
   };
 
   const handleFeedbackThumb = async (messageId: string, helpful: boolean) => {
@@ -261,6 +314,16 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleNewConversation}
+            className="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-variant text-xs text-on-surface font-medium flex items-center gap-1 transition-colors"
+            title="Start new conversation"
+          >
+            <span className="material-symbols-outlined text-sm">refresh</span>
+            <span>{t('talk_new_chat', 'New Chat')}</span>
+          </button>
+
           <button
             onClick={() => setShowMemoryDrawer(!showMemoryDrawer)}
             className="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-variant text-xs text-on-surface font-medium flex items-center gap-1"

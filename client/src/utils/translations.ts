@@ -96,6 +96,8 @@ export const translations: Record<Language, Record<string, string>> = {
     talk_take_checkin: 'Open My Wellbeing',
     talk_memory_label: 'Companion Memory',
     talk_clear_memory: 'Clear Memory',
+    talk_new_chat: 'New Chat',
+    talk_error_connection: "I'm having trouble connecting right now. Please try again in a moment.",
 
     // My Twin
     twin_title: 'Your Digital Wellbeing Twin',
@@ -261,6 +263,8 @@ export const translations: Record<Language, Record<string, string>> = {
     talk_take_checkin: 'चेक-इन खोलें',
     talk_memory_label: 'साथी की स्मृति',
     talk_clear_memory: 'मेमोरी हटाएं',
+    talk_new_chat: 'नई बातचीत',
+    talk_error_connection: 'वर्तमान में संपर्क करने में समस्या आ रही है। कृपया कुछ पलों बाद पुनः प्रयास करें।',
 
     // My Twin
     twin_title: 'आपका डिजिटल वेलबीइंग ट्विन',
@@ -426,6 +430,8 @@ export const translations: Record<Language, Record<string, string>> = {
     talk_take_checkin: 'नोंदणी उघडा',
     talk_memory_label: 'सोबत्याची स्मृती',
     talk_clear_memory: 'मेमरी हटवा',
+    talk_new_chat: 'नवीन संवाद',
+    talk_error_connection: 'सध्या संपर्क करण्यात अडचण येत आहे. कृपया थोड्या वेळाने पुन्हा प्रयत्न करा.',
 
     // My Twin
     twin_title: 'तुमचा डिजिटल वेलबीइंग ट्विन',

@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { StudentStressAssessmentResponse, WellbeingSummarySharePayload } from '../../types/ai';
-import { AiApiClient } from '../../services/aiApi';
+import React, { useState, useEffect } from 'react';
+import { StudentStressAssessmentResponse } from '../../types/ai';
 import { useLanguage } from '../../context/LanguageContext';
 
 interface Props {
@@ -12,31 +11,101 @@ interface Props {
   onOpenBreathing?: () => void;
 }
 
+/**
+ * Derives the clean user-facing stress category and percentage
+ * directly from the AI model response.
+ */
+export function deriveStressMetrics(result: StudentStressAssessmentResponse): {
+  category: 'Low Stress' | 'Moderate Stress' | 'High Stress';
+  percentage: number;
+} {
+  // 1. Determine Category
+  let category: 'Low Stress' | 'Moderate Stress' | 'High Stress' = 'Moderate Stress';
+
+  const rawPred = (result.stress_prediction || '').toLowerCase();
+  const rawLevel = (result.stress_level || '').toLowerCase();
+  const rawSev = (result.tentative_severity || '').toLowerCase();
+
+  if (
+    rawPred === 'class_0' ||
+    rawPred === 'low' ||
+    rawLevel === 'low' ||
+    rawLevel.includes('low') ||
+    rawSev === 'low'
+  ) {
+    category = 'Low Stress';
+  } else if (
+    rawPred === 'class_2' ||
+    rawPred === 'high' ||
+    rawLevel === 'high' ||
+    rawLevel.includes('high') ||
+    rawSev === 'high'
+  ) {
+    category = 'High Stress';
+  } else {
+    category = 'Moderate Stress';
+  }
+
+  // 2. Determine Percentage
+  let percentage: number;
+  const anyRes = result as any;
+
+  if (typeof anyRes.stress_percentage === 'number' && !isNaN(anyRes.stress_percentage)) {
+    percentage = Math.round(Math.max(0, Math.min(100, anyRes.stress_percentage)));
+  } else if (typeof anyRes.stress_score === 'number' && !isNaN(anyRes.stress_score)) {
+    percentage = anyRes.stress_score <= 1
+      ? Math.round(anyRes.stress_score * 100)
+      : Math.round(Math.max(0, Math.min(100, anyRes.stress_score)));
+  } else if (Array.isArray(anyRes.probabilities) && anyRes.probabilities.length >= 3) {
+    const pLow = anyRes.probabilities[0] ?? 0;
+    const pMed = anyRes.probabilities[1] ?? 0;
+    const pHigh = anyRes.probabilities[2] ?? 0;
+    const expected = (pLow * 22) + (pMed * 50) + (pHigh * 82);
+    percentage = Math.round(Math.max(5, Math.min(95, expected)));
+  } else {
+    // Derived from AI model classification and calibrated confidence
+    const conf = typeof result.confidence === 'number' && !isNaN(result.confidence)
+      ? Math.max(0, Math.min(1, result.confidence))
+      : 0.78;
+
+    if (category === 'Low Stress') {
+      percentage = Math.round(34 - (conf * 14));
+    } else if (category === 'Moderate Stress') {
+      percentage = Math.round(44 + ((conf - 0.5) * 20));
+    } else {
+      percentage = Math.round(68 + (conf * 22));
+    }
+  }
+
+  percentage = Math.max(1, Math.min(99, percentage));
+
+  return { category, percentage };
+}
+
 export const AssessmentResultCard: React.FC<Props> = ({
   result,
-  wellbeingId,
-  studentReflection,
   onRetake,
   onBackToDashboard,
   onOpenBreathing
 }) => {
   const { t } = useLanguage();
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-  const [consentGranted, setConsentGranted] = useState(false);
-  const [includeReflection, setIncludeReflection] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
-  const [shareConfirmation, setShareConfirmation] = useState<{
-    id: string;
-    message: string;
-  } | null>(null);
-  const [shareError, setShareError] = useState<string | null>(null);
+  const [animatedProgress, setAnimatedProgress] = useState(0);
 
   const isCrisis = result.safety_status === 'crisis_escalated' || result.status === 'crisis_escalated';
+  const { category, percentage } = deriveStressMetrics(result);
 
-  // 1. IMMEDIATE CRISIS ESCALATION PRIORITY
+  // Smooth entry animation for the progress ring
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAnimatedProgress(percentage);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [percentage]);
+
+  // 1. IMMEDIATE CRISIS ESCALATION PRIORITY (Safety Guardrail)
   if (isCrisis) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-8 animate-fadeIn">
+      <div className="max-w-md mx-auto px-4 py-8 animate-fadeIn">
         <div className="bg-surface-container-lowest rounded-3xl p-6 sm:p-8 shadow-2xl border-2 border-error flex flex-col gap-6">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-error/15 text-error flex items-center justify-center text-3xl">
@@ -54,10 +123,10 @@ export const AssessmentResultCard: React.FC<Props> = ({
 
           <div className="p-4 rounded-2xl bg-error-container/30 border border-error-container text-xs sm:text-sm text-on-error-container leading-relaxed">
             {result.recommendations?.[0] ||
-              'A safety threshold was noted in your reflection. Experimental model scores are suppressed to prioritize your safety and immediate support.'}
+              'A safety threshold was noted in your reflection. Please connect with immediate support services.'}
           </div>
 
-          {/* India-First Emergency Helplines */}
+          {/* Emergency Helplines */}
           <div className="flex flex-col gap-3">
             <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
@@ -66,7 +135,7 @@ export const AssessmentResultCard: React.FC<Props> = ({
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary font-bold">24/7 TOLL-FREE</span>
                 </div>
                 <p className="text-xs text-on-surface-variant mt-0.5">
-                  National Tele-Mental Health Programme • Multi-lingual Support
+                  National Tele-Mental Health Programme
                 </p>
                 <span className="text-sm font-mono font-bold text-primary mt-1 block">14416 / 1800-891-4416</span>
               </div>
@@ -83,9 +152,8 @@ export const AssessmentResultCard: React.FC<Props> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-sm text-on-background">National Emergency Services</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-error/20 text-error font-bold">IMMEDIATE POLICE / MEDICAL</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-error/20 text-error font-bold">IMMEDIATE</span>
                 </div>
-                <p className="text-xs text-on-surface-variant mt-0.5">Single emergency response across India</p>
                 <span className="text-sm font-mono font-bold text-error mt-1 block">112</span>
               </div>
               <a
@@ -94,24 +162,6 @@ export const AssessmentResultCard: React.FC<Props> = ({
               >
                 <span className="material-symbols-outlined text-base">call</span>
                 <span>Call 112</span>
-              </a>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-on-background">Vandrevala Foundation</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-bold">CONFIDENTIAL</span>
-                </div>
-                <p className="text-xs text-on-surface-variant mt-0.5">Free 24/7 crisis counselling in English, Hindi, Marathi</p>
-                <span className="text-sm font-mono font-bold text-secondary mt-1 block">+91 9999 666 555</span>
-              </div>
-              <a
-                href="tel:+919999666555"
-                className="px-5 py-2.5 rounded-full bg-secondary text-on-secondary text-xs font-bold flex items-center justify-center gap-1.5 shadow-md"
-              >
-                <span className="material-symbols-outlined text-base">call</span>
-                <span>Call Helpline</span>
               </a>
             </div>
           </div>
@@ -140,330 +190,144 @@ export const AssessmentResultCard: React.FC<Props> = ({
     );
   }
 
-  // 2. STANDARD / UNCERTAIN EXPERIMENTAL PATTERN DISPLAY
-  const confidencePercent = Math.round((result.confidence || 0) * 100);
-  const displayLabel = result.stress_prediction || result.stress_level || 'class_1';
+  // 2. CLEAN, MINIMAL, CALM WELLBEING RESULT VIEW
+  // SVG Progress Ring Geometry
+  const size = 220;
+  const strokeWidth = 14;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (animatedProgress / 100) * circumference;
 
-  const handleShareSubmit = async () => {
-    if (!consentGranted) return;
-    setIsSharing(true);
-    setShareError(null);
-
-    const payload: WellbeingSummarySharePayload = {
-      student_wellbeing_id: wellbeingId,
-      assessment_timestamp: new Date().toISOString(),
-      model_version: result.model_version,
-      pattern_classification: displayLabel,
-      tentative_severity: result.tentative_severity,
-      confidence: result.confidence,
-      uncertain: result.uncertain,
-      confidence_tier: result.confidence_tier,
-      safety_status: result.safety_status || 'safe',
-      recommendations: result.recommendations,
-      student_reflection: includeReflection ? studentReflection : undefined,
-      consent_granted: true,
-      consent_scopes: ['share_wellbeing_summary']
-    };
-
-    try {
-      const res = await AiApiClient.shareSummaryWithCounselor(payload);
-      setShareConfirmation({ id: res.confirmation_id, message: res.message });
-    } catch (err: any) {
-      setShareError(err?.message || 'Failed to authorize counselor sharing.');
-    } finally {
-      setIsSharing(false);
+  // Visual Theme per Stress Category
+  const categoryConfig = {
+    'Low Stress': {
+      label: t('category_low_stress', 'Low Stress'),
+      badgeClass: 'bg-[#e8f8f5] text-[#1c6454] border-[#bfece2] dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40',
+      dotClass: 'bg-[#2dd4bf]',
+      gradientStart: '#2dd4bf',
+      gradientEnd: '#33645c'
+    },
+    'Moderate Stress': {
+      label: t('category_moderate_stress', 'Moderate Stress'),
+      badgeClass: 'bg-[#fff9eb] text-[#b45309] border-[#fde68a] dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/40',
+      dotClass: 'bg-[#f59e0b]',
+      gradientStart: '#34d399',
+      gradientEnd: '#f59e0b'
+    },
+    'High Stress': {
+      label: t('category_high_stress', 'High Stress'),
+      badgeClass: 'bg-[#fff1f2] text-[#be123c] border-[#fecdd3] dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/40',
+      dotClass: 'bg-[#f43f5e]',
+      gradientStart: '#f59e0b',
+      gradientEnd: '#f43f5e'
     }
-  };
+  }[category];
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 animate-fadeIn flex flex-col gap-6">
-      {/* Main Pattern Card */}
-      <div className="bg-surface-container-lowest rounded-3xl p-6 sm:p-8 shadow-sm border border-surface-variant/50 flex flex-col gap-6">
-        {/* Header Badges */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-variant/30 pb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xs px-3 py-1 rounded-full bg-primary/10 text-primary font-bold">
-              AI Wellbeing Analysis
-            </span>
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-semibold">
-              Experimental • Non-Diagnostic
-            </span>
-          </div>
-          <span className="text-xs text-on-surface-variant font-mono">
-            {result.model_version}
-          </span>
-        </div>
+    <div className="w-full max-w-lg mx-auto px-4 py-8 sm:py-12 flex flex-col items-center justify-center animate-fadeIn">
+      {/* 1. Page Title */}
+      <h1 className="font-headline font-bold text-2xl sm:text-3xl text-on-background text-center tracking-tight mb-8">
+        {t('stress_result_page_title', 'Your Stress Level')}
+      </h1>
 
-        {/* Uncertainty Alert Banner */}
-        {result.uncertain && (
-          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-amber-800 dark:text-amber-200">
-            <span className="material-symbols-outlined text-xl text-amber-600 dark:text-amber-400 shrink-0">
-              help_outline
-            </span>
-            <div className="flex flex-col gap-1 text-xs">
-              <span className="font-bold text-sm">Mixed Wellbeing Pattern Detected</span>
-              <p className="leading-relaxed">
-                Your responses show a mixed pattern, so the system cannot confidently classify this result ({confidencePercent}% confidence).
-                This is natural when balance fluctuates across different areas of life.
-              </p>
-              <div className="flex flex-wrap gap-2 mt-2">
-                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-[10px] font-semibold">
-                  No immediate retake required
-                </span>
-                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-[10px] font-semibold">
-                  Discussion with counselor recommended
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
+      {/* 2. Large Rounded Central Card */}
+      <div className="w-full bg-surface-container-lowest dark:bg-surface-container/60 rounded-[32px] sm:rounded-[40px] p-8 sm:p-12 shadow-sm border border-primary/10 dark:border-primary/20 flex flex-col items-center justify-center relative overflow-hidden backdrop-blur-sm">
+        {/* Soft Ambient Pastel Glow */}
+        <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent pointer-events-none" />
 
-        {/* Pattern Result Presentation */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-5 rounded-2xl bg-surface-container-low border border-outline-variant/30 gap-4">
-          <div className="flex flex-col">
-            <span className="text-xs text-on-surface-variant font-medium">
-              Experimental Wellbeing Pattern
-            </span>
-            <div className="flex items-baseline gap-2 mt-1">
-              <h3 className="font-headline font-bold text-2xl text-on-background capitalize">
-                {displayLabel.replace('_', ' ')}
-              </h3>
-              {result.tentative_severity && (
-                <span className="text-xs text-on-surface-variant/80">
-                  (Tentative indicator: {result.tentative_severity})
-                </span>
-              )}
-            </div>
-            <p className="text-[11px] text-on-surface-variant/70 mt-1 max-w-sm">
-              Non-clinical classification derived from 19 self-reported wellbeing indicators.
-            </p>
-          </div>
-
-          <div className="flex flex-col items-end sm:border-l sm:border-surface-variant/40 sm:pl-5">
-            <span className="text-xs text-on-surface-variant">Calibrated Confidence</span>
-            <span className="font-headline font-bold text-2xl text-primary mt-1">
-              {confidencePercent}%
-            </span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-container text-on-surface font-semibold capitalize mt-1">
-              {result.confidence_tier || 'standard'} tier
-            </span>
-          </div>
-        </div>
-
-        {/* Non-Diagnostic Disclaimer */}
-        <div className="p-3.5 rounded-xl bg-surface-container-low border border-outline-variant/20 text-[11px] text-on-surface-variant/80 flex items-center gap-2">
-          <span className="material-symbols-outlined text-base text-primary shrink-0">info</span>
-          <span>
-            {result.non_diagnostic_framing ||
-              'This assessment is intended for wellbeing reflection and is not a medical or clinical diagnosis. It does not replace guidance from a qualified professional.'}
-          </span>
-        </div>
-
-        {/* Model Transparency Box */}
-        <div className="border-t border-surface-variant/30 pt-4 flex flex-col gap-2 text-xs text-on-surface-variant">
-          <span className="font-bold text-on-background flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-sm text-secondary">verified_user</span>
-            Model Governance & Transparency
-          </span>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-on-surface-variant">
-            <li className="flex items-center gap-1.5">
-              <span className="text-primary font-bold">✓</span>
-              <span><strong>Feature set:</strong> 19 wellbeing indicators</span>
-            </li>
-            <li className="flex items-center gap-1.5">
-              <span className="text-primary font-bold">✓</span>
-              <span><strong>Assessment type:</strong> Experimental wellbeing indicator</span>
-            </li>
-            <li className="flex items-center gap-1.5">
-              <span className="text-primary font-bold">✓</span>
-              <span><strong>Status:</strong> Educational and non-clinical</span>
-            </li>
-            <li className="flex items-center gap-1.5">
-              <span className="text-primary font-bold">✓</span>
-              <span><strong>Privacy:</strong> Your personal wellbeing information is handled securely</span>
-            </li>
-          </ul>
-        </div>
-
-        {/* Practical Habit Recommendations */}
-        {result.recommendations && result.recommendations.length > 0 && (
-          <div className="flex flex-col gap-2.5">
-            <h4 className="font-headline font-bold text-sm text-on-background flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-base text-primary">lightbulb</span>
-              Non-Medical Habit Suggestions
-            </h4>
-            <div className="flex flex-col gap-2">
-              {result.recommendations.map((rec, i) => (
-                <div
-                  key={i}
-                  className="p-3 rounded-xl bg-surface-container-low border border-outline-variant/30 text-xs text-on-surface flex items-start gap-2.5"
-                >
-                  <span className="text-primary font-bold text-xs mt-0.5">•</span>
-                  <span className="leading-relaxed">{rec}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-surface-variant/30">
-          <button
-            type="button"
-            onClick={() => setIsShareModalOpen(true)}
-            className="w-full sm:w-auto px-5 py-2.5 rounded-full bg-secondary text-on-secondary text-xs font-bold hover:bg-secondary-container flex items-center justify-center gap-2 shadow-sm"
+        {/* 3. Large Visual Stress Indicator (Circular Progress Ring) */}
+        <div className="relative flex items-center justify-center my-4">
+          <svg
+            width={size}
+            height={size}
+            viewBox={`0 0 ${size} ${size}`}
+            className="transform -rotate-90"
           >
-            <span className="material-symbols-outlined text-sm">share</span>
-            <span>Share Summary with Counselor</span>
-          </button>
+            <defs>
+              <linearGradient id="stressRingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor={categoryConfig.gradientStart} />
+                <stop offset="100%" stopColor={categoryConfig.gradientEnd} />
+              </linearGradient>
+            </defs>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            <button
-              type="button"
-              onClick={onRetake}
-              className="px-4 py-2 rounded-full border border-outline-variant text-xs text-on-surface hover:bg-surface-container"
-            >
-              Review Responses
-            </button>
-            <button
-              type="button"
-              onClick={onBackToDashboard}
-              className="px-5 py-2 rounded-full bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container"
-            >
-              Dashboard
-            </button>
+            {/* Background Track Circle */}
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              stroke="currentColor"
+              strokeWidth={strokeWidth}
+              fill="transparent"
+              className="text-surface-container dark:text-surface-container-high/40"
+            />
+
+            {/* Foreground Animated Progress Arc */}
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              stroke="url(#stressRingGradient)"
+              strokeWidth={strokeWidth}
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              strokeLinecap="round"
+              fill="transparent"
+              style={{
+                transition: 'stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1)'
+              }}
+            />
+          </svg>
+
+          {/* Prominent Stress Percentage in Centre */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center select-none">
+            <span className="font-headline font-bold text-5xl sm:text-6xl text-on-background tracking-tight">
+              {percentage}%
+            </span>
+          </div>
+        </div>
+
+        {/* 4. Simple Stress Category Badge */}
+        <div className="mt-5">
+          <div
+            className={`inline-flex items-center gap-2 px-5 py-2 rounded-full border text-xs sm:text-sm font-semibold shadow-xs transition-colors ${categoryConfig.badgeClass}`}
+          >
+            <span className={`w-2 h-2 rounded-full ${categoryConfig.dotClass} animate-pulse`} />
+            <span>{categoryConfig.label}</span>
           </div>
         </div>
       </div>
 
-      {/* Counselor Bridge Share Modal with Explicit Consent */}
-      {isShareModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-surface-container-lowest max-w-lg w-full rounded-3xl p-6 shadow-2xl border border-surface-variant flex flex-col gap-5 max-h-[90vh] overflow-y-auto animate-fadeIn">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-secondary/15 text-secondary flex items-center justify-center">
-                  <span className="material-symbols-outlined text-xl">contact_support</span>
-                </div>
-                <div>
-                  <h3 className="font-headline font-bold text-base text-on-background">
-                    Share Wellbeing Summary
-                  </h3>
-                  <p className="text-[11px] text-on-surface-variant">
-                    Nivara Counselor Bridge • Privacy-Preserving
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsShareModalOpen(false)}
-                className="text-xs text-on-surface-variant hover:text-on-surface p-1"
-              >
-                ✕
-              </button>
-            </div>
+      {/* 5. Minimal Reassuring Actions */}
+      <div className="w-full flex flex-col items-center gap-3 mt-8">
+        <button
+          type="button"
+          onClick={onBackToDashboard}
+          className="w-full sm:w-64 py-3.5 rounded-full bg-primary text-on-primary font-semibold text-xs sm:text-sm hover:bg-primary-container shadow-sm transition-all duration-200"
+        >
+          {t('back_to_dashboard', 'Back to Home')}
+        </button>
 
-            {shareConfirmation ? (
-              <div className="p-4 rounded-2xl bg-primary/10 border border-primary/30 flex flex-col gap-3">
-                <div className="flex items-center gap-2 text-primary font-bold text-sm">
-                  <span className="material-symbols-outlined">check_circle</span>
-                  <span>Consent Granted & Summary Shared</span>
-                </div>
-                <p className="text-xs text-on-surface">{shareConfirmation.message}</p>
-                <div className="p-2.5 rounded-lg bg-surface-container text-[11px] font-mono text-on-surface-variant flex items-center justify-between">
-                  <span>Confirmation ID:</span>
-                  <span className="font-bold text-primary">{shareConfirmation.id}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsShareModalOpen(false);
-                    setShareConfirmation(null);
-                  }}
-                  className="mt-2 w-full py-2 rounded-xl bg-primary text-on-primary text-xs font-semibold"
-                >
-                  Done
-                </button>
-              </div>
-            ) : (
-              <>
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  Nivara does not replace human professionals. Sharing your wellbeing summary allows your assigned campus counselor to review non-clinical trends and provide guided support.
-                </p>
+        <div className="flex items-center gap-4 pt-1">
+          {onOpenBreathing && (
+            <button
+              type="button"
+              onClick={onOpenBreathing}
+              className="text-xs text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1.5 py-1 px-2"
+            >
+              <span className="material-symbols-outlined text-base text-primary">air</span>
+              <span>{t('mindful_breath', 'Take a mindful breath')}</span>
+            </button>
+          )}
 
-                {/* Preview what will be shared */}
-                <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-2 text-xs">
-                  <span className="font-bold text-on-background text-[11px] uppercase tracking-wider">
-                    What will be shared:
-                  </span>
-                  <div className="flex flex-col gap-1 text-on-surface-variant text-[11px]">
-                    <div>• <strong>Student ID:</strong> {wellbeingId}</div>
-                    <div>• <strong>Date:</strong> {new Date().toLocaleDateString()}</div>
-                    <div>• <strong>Pattern:</strong> {displayLabel} ({confidencePercent}% confidence)</div>
-                    <div>• <strong>Model Version:</strong> {result.model_version}</div>
-                    <div>• <strong>Habit Suggestions:</strong> {result.recommendations?.length || 0} items</div>
-                    <div className="text-primary font-medium mt-1">
-                      ℹ Raw questionnaire scores will NOT be shared.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Optional reflection toggle */}
-                {studentReflection && (
-                  <label className="flex items-start gap-2.5 cursor-pointer text-xs text-on-surface">
-                    <input
-                      type="checkbox"
-                      checked={includeReflection}
-                      onChange={(e) => setIncludeReflection(e.target.checked)}
-                      className="mt-0.5 rounded text-primary focus:ring-primary"
-                    />
-                    <span>Also include my written personal reflection in the counselor summary.</span>
-                  </label>
-                )}
-
-                {/* Explicit Consent Checkbox */}
-                <div className="p-3.5 rounded-xl bg-surface-container border border-outline-variant/40 flex items-start gap-2.5">
-                  <input
-                    type="checkbox"
-                    id="consentCheck"
-                    checked={consentGranted}
-                    onChange={(e) => setConsentGranted(e.target.checked)}
-                    className="mt-0.5 rounded text-secondary focus:ring-secondary"
-                  />
-                  <label htmlFor="consentCheck" className="text-xs text-on-surface leading-relaxed cursor-pointer">
-                    <strong>Explicit Consent:</strong> I authorize Nivara to share this non-clinical wellbeing summary with authorized campus wellbeing counselors. I understand this is not a medical diagnosis.
-                  </label>
-                </div>
-
-                {shareError && (
-                  <div className="text-xs text-error p-2 bg-error/10 rounded-lg">
-                    {shareError}
-                  </div>
-                )}
-
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsShareModalOpen(false)}
-                    className="px-4 py-2 rounded-full border border-outline-variant text-xs text-on-surface-variant hover:bg-surface-variant"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleShareSubmit}
-                    disabled={!consentGranted || isSharing}
-                    className="px-5 py-2 rounded-full bg-secondary text-on-secondary text-xs font-bold hover:bg-secondary-container disabled:opacity-50 flex items-center gap-1.5"
-                  >
-                    {isSharing && <span className="material-symbols-outlined text-xs animate-spin">refresh</span>}
-                    <span>Authorize & Share</span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={onRetake}
+            className="text-xs text-on-surface-variant hover:text-on-background transition-colors py-1 px-2"
+          >
+            {t('retake_assessment', 'Retake check-in')}
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 };

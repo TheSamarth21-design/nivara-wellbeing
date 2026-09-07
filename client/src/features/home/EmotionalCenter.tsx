@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TwinStatus } from '../../types';
 import { ApiClient } from '../../lib/apiClient';
 import { AiApiClient } from '../../services/aiApi';
+import { checkinService } from '../../services/checkinService';
 import { useLanguage } from '../../context/LanguageContext';
 
 interface Props {
@@ -37,6 +38,7 @@ export const EmotionalCenter: React.FC<Props> = ({
       .then((st) => setAiStatus(st as any))
       .catch(() => setAiStatus('OFFLINE'));
 
+    // 1. Initial fast local read
     try {
       const saved = localStorage.getItem(`nivara_today_record_${wellbeingId}_${todayStr}`);
       if (saved) {
@@ -47,6 +49,25 @@ export const EmotionalCenter: React.FC<Props> = ({
     } catch {
       setTodayRecord(null);
     }
+
+    // 2. Authoritative sync from Firestore
+    checkinService.getTodayCheckin().then((todayCheckin) => {
+      if (todayCheckin) {
+        setTodayRecord({
+          date: todayCheckin.date,
+          result: todayCheckin.aiResult || null,
+          formData: todayCheckin.formData || null,
+          moodScore: todayCheckin.moodScore,
+          moodTier: todayCheckin.moodTier,
+          energyLevel: todayCheckin.energyLevel,
+          stressLevel: todayCheckin.stressLevel,
+          sleepQuality: todayCheckin.sleepQuality,
+          note: todayCheckin.note,
+        });
+      }
+    }).catch((err) => {
+      console.warn("Could not load today's checkin from Firestore:", err);
+    });
   }, [wellbeingId, todayStr]);
 
   const handleSaveName = (e: React.FormEvent) => {

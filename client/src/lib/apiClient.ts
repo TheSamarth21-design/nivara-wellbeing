@@ -1,3 +1,7 @@
+import { checkinService } from '../services/checkinService';
+import { AiApiClient } from '../services/aiApi';
+import { AIMessageItem } from '../types';
+
 const API_BASE = (import.meta.env?.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '') + '/api';
 
 export class ApiClient {
@@ -74,13 +78,9 @@ export class ApiClient {
     }
   }
 
-  // Checkins
+  // Checkins - Persisted directly in Firebase Firestore
   public static async getCheckins() {
-    try {
-      return await this.request('/checkins');
-    } catch {
-      return [];
-    }
+    return await checkinService.getCheckins();
   }
 
   // Enhanced Wellbeing Profile
@@ -104,7 +104,7 @@ export class ApiClient {
     }
   }
 
-  // Enhanced Check-ins
+  // Enhanced Check-ins - Persisted directly in Firebase Firestore (no fake success fallback)
   public static async submitEnhancedCheckin(data: {
     moodScore: number;
     moodTier?: string;
@@ -113,32 +113,30 @@ export class ApiClient {
     sleepQuality?: string;
     feelingTags?: string[];
     note?: string;
+    date?: string;
+    aiResult?: Record<string, unknown>;
+    formData?: Record<string, unknown>;
   }) {
-    try {
-      return await this.request('/checkins', {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
-    } catch {
-      return {
-        success: true,
-        checkin: {
-          id: 'chk-' + Date.now(),
-          wellbeing_id: this.wellbeingId,
-          ...data,
-          created_at: new Date().toISOString()
-        }
-      };
-    }
+    const checkin = await checkinService.submitCheckin({
+      moodScore: data.moodScore,
+      moodTier: data.moodTier || (data.moodScore >= 4 ? 'good' : data.moodScore >= 3 ? 'okay' : 'not_great'),
+      energyLevel: data.energyLevel || 'Moderate',
+      stressLevel: data.stressLevel || 'Moderate',
+      sleepQuality: data.sleepQuality || 'Good',
+      feelingTags: data.feelingTags || [],
+      note: data.note || '',
+      date: data.date,
+      aiResult: data.aiResult,
+      formData: data.formData,
+    });
+    return {
+      success: true,
+      checkin
+    };
   }
 
   public static async getAdaptiveQuestion() {
-    try {
-      const res = await this.request('/checkins/adaptive');
-      return res.adaptiveQuestion;
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   // Digital Twin
@@ -175,48 +173,34 @@ export class ApiClient {
     }
   }
 
-  // AI Companion
-  public static async getAIMessages() {
-    try {
-      return await this.request('/companion/messages');
-    } catch {
-      return [
-        {
-          id: 'msg-welcome',
-          wellbeing_id: this.wellbeingId,
-          sender: 'assistant',
-          message: 'Hello 🌿 Welcome to Nivara. I am your quiet space companion. How is your day feeling so far?',
-          safety_tier: 'GREEN',
-          created_at: new Date().toISOString()
-        }
-      ];
-    }
+  // AI Companion (Routed directly to Render Gemini AI Platform)
+  public static async getAIMessages(): Promise<AIMessageItem[]> {
+    return [
+      {
+        id: 'msg-welcome',
+        sender: 'assistant',
+        message: 'Hello 🌿 Welcome to Nivara. I am your quiet space companion. How is your day feeling so far?',
+        safety_tier: 'GREEN',
+        created_at: new Date().toISOString()
+      }
+    ];
   }
 
-  public static async sendAIMessage(message: string) {
-    try {
-      return await this.request('/companion/message', {
-        method: 'POST',
-        body: JSON.stringify({ message })
-      });
-    } catch {
-      // Local Empathetic Engine Fallback
-      const lower = message.toLowerCase();
-      let reply = "Thank you for sharing that with me. You don't have to figure everything out all at once. What would feel most supportive for you right now?";
-      
-      if (lower.includes('exam') || lower.includes('study') || lower.includes('stress')) {
-        reply = "Academic deadlines can feel heavy when they stack up. Remember to take a slow breath. Breaking your focus into one small 25-minute block can make things much more manageable.";
-      } else if (lower.includes('sleep') || lower.includes('tired') || lower.includes('exhausted')) {
-        reply = "Rest is foundational. When your mind is racing at night, try a gentle 2-minute 4-4-6 breathing reset before bed.";
-      } else if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
-        reply = "Hello 🌿 It's wonderful to see you today. How is your mind and energy feeling?";
-      }
-
-      return {
-        reply,
-        safetyTier: 'GREEN'
-      };
+  public static async sendAIMessage(message: string, conversationId?: string) {
+    const res = await AiApiClient.sendChatMessage(message, conversationId);
+    let safetyTier: 'GREEN' | 'YELLOW' | 'RED' = 'GREEN';
+    if (res.safety_status === 'crisis') {
+      safetyTier = 'RED';
+    } else if (res.safety_status === 'warning') {
+      safetyTier = 'YELLOW';
     }
+
+    return {
+      reply: res.response,
+      safetyTier,
+      conversationId: res.conversation_id,
+      suggestedAction: res.safety_status === 'crisis' ? 'counsellor' : undefined
+    };
   }
 
   public static async sendAIFeedback(data: {

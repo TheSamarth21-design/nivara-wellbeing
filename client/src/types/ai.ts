@@ -111,3 +111,23 @@ export interface WellbeingSummarySharePayload {
   consent_granted: boolean;
   consent_scopes: string[];
 }
+
+/**
+ * Chat request payload for POST /api/v1/ai/chat
+ */
+export interface AiChatRequest {
+  message: string;
+  conversation_id?: string;
+}
+
+/**
+ * Response schema from POST /api/v1/ai/chat
+ */
+export interface AiChatResponse {
+  success?: boolean;
+  response: string;
+  conversation_id: string;
+  domain?: string;
+  safety_status?: 'normal' | 'crisis' | 'warning' | string;
+  [key: string]: unknown;
+}
