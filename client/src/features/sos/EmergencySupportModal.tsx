@@ -3,7 +3,8 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
 import {
   supportRequestService,
-  SupportSessionType
+  SupportSessionType,
+  JitsiJoinAuthorization
 } from '../../services/supportRequestService';
 import { SupportWaitingScreen } from './SupportWaitingScreen';
 import { JitsiCall } from './JitsiCall';
@@ -28,6 +29,9 @@ export const EmergencySupportModal: React.FC<Props> = ({
   const [selectedType, setSelectedType] = useState<SupportSessionType>('video');
   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const [jwtToken, setJwtToken] = useState<string>('');
+  const [jitsiDomain, setJitsiDomain] = useState<string>('8x8.vc');
+  const [isModerator, setIsModerator] = useState<boolean>(false);
   const [isDemoCall, setIsDemoCall] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -52,8 +56,8 @@ export const EmergencySupportModal: React.FC<Props> = ({
     try {
       const studentName = profile?.name || user.displayName || 'Student';
       const created = await supportRequestService.createSupportRequest(type, studentName);
-      setCurrentRequestId(created.id);
-      setActiveRoomId(created.roomId);
+      setCurrentRequestId(created.requestId);
+      setActiveRoomId(created.roomName);
       setStep('waiting');
     } catch (err: any) {
       console.error('[EmergencySupportModal] Create request error:', err);
@@ -68,8 +72,22 @@ export const EmergencySupportModal: React.FC<Props> = ({
     }
   };
 
-  const handleSessionAccepted = (roomId: string, isDemo = false) => {
-    setActiveRoomId(roomId);
+  const handleSessionAccepted = (joinAuth: JitsiJoinAuthorization, isDemo = false) => {
+    if (!joinAuth.configured && !joinAuth.jwtToken) {
+      setErrorMessage(
+        joinAuth.message ||
+          t(
+            'sos_calling_not_configured',
+            'Secure video calling is currently being configured. Please contact the counselor directly.'
+          )
+      );
+      setStep('options');
+      return;
+    }
+    setActiveRoomId(joinAuth.roomName);
+    setJwtToken(joinAuth.jwtToken);
+    setJitsiDomain(joinAuth.jitsiDomain);
+    setIsModerator(joinAuth.isModerator);
     setIsDemoCall(isDemo);
     setStep('in_call');
   };
@@ -89,6 +107,7 @@ export const EmergencySupportModal: React.FC<Props> = ({
     setStep('options');
     setCurrentRequestId(null);
     setActiveRoomId(null);
+    setJwtToken('');
     setIsDemoCall(false);
     setErrorMessage(null);
   };
@@ -105,6 +124,10 @@ export const EmergencySupportModal: React.FC<Props> = ({
         roomName={activeRoomId}
         type={selectedType}
         userName={profile?.name || user?.displayName || 'Student'}
+        userEmail={user?.email || 'student@nivara.internal'}
+        jwtToken={jwtToken}
+        domain={jitsiDomain}
+        isModerator={isModerator}
         onCallEnd={handleCallEnded}
         isDemoTest={isDemoCall}
       />
@@ -112,29 +135,29 @@ export const EmergencySupportModal: React.FC<Props> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-      <div className="bg-surface-container-lowest max-w-xl w-full rounded-3xl p-6 shadow-2xl border border-error-container/60 flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
-        {/* Header Bar */}
-        <div className="flex items-start justify-between">
+    <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+      <div className="bg-surface-container-lowest max-w-xl w-full rounded-3xl shadow-2xl border border-surface-variant/70 flex flex-col overflow-hidden max-h-[92vh]">
+        {/* Header */}
+        <div className="p-6 pb-4 border-b border-surface-variant/40 flex items-start justify-between bg-surface-container-low/40">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-error-container text-on-error-container flex items-center justify-center text-2xl shadow-sm shrink-0">
-              <span className="material-symbols-outlined text-2xl text-error">emergency</span>
+            <div className="w-11 h-11 rounded-2xl bg-rose-500 text-white flex items-center justify-center font-bold text-sm shadow-md shrink-0">
+              SOS
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="font-headline font-bold text-xl text-on-background">
-                  {t('sos_emergency_title', 'Emergency Support')}
-                </h2>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-error/15 text-error font-bold uppercase tracking-wider">
-                  24/7 SOS
+              <h2 className="font-headline font-bold text-xl text-on-background flex items-center gap-2">
+                <span>{t('sos_modal_title', 'Emergency Support')}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-400 font-bold uppercase tracking-wider">
+                  24/7
                 </span>
-              </div>
-              <p className="text-xs text-on-surface-variant">
-                {t('sos_emergency_subtitle', 'You are not alone. Choose how you would like to get support.')}
+              </h2>
+              <p className="text-xs text-on-surface-variant mt-0.5">
+                {t('sos_modal_subtitle', 'You are not alone. Choose how you would like to get support.')}
               </p>
             </div>
           </div>
+
           <button
+            type="button"
             onClick={handleClose}
             className="w-8 h-8 rounded-full hover:bg-surface-variant flex items-center justify-center text-on-surface-variant transition-colors"
             title="Close"
@@ -143,79 +166,77 @@ export const EmergencySupportModal: React.FC<Props> = ({
           </button>
         </div>
 
-        {/* Error Alert if any */}
-        {errorMessage && (
-          <div className="p-3.5 rounded-2xl bg-error-container/30 border border-error/30 text-xs text-on-error-container flex items-start gap-2.5 animate-fadeIn">
-            <span className="material-symbols-outlined text-sm text-error shrink-0 mt-0.5">error</span>
-            <div className="flex-1">
-              <p className="leading-relaxed">{errorMessage}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Step: Waiting Screen */}
+        {/* 2. Waiting Screen View */}
         {step === 'waiting' && currentRequestId && (
           <SupportWaitingScreen
             requestId={currentRequestId}
             type={selectedType}
-            studentName={profile?.name || user?.displayName || 'Student'}
+            studentName={profile?.name || user?.displayName || undefined}
             onAccepted={handleSessionAccepted}
             onCancelled={handleResetModal}
           />
         )}
 
-        {/* Step: Call Ended Screen */}
+        {/* 3. Call Ended View */}
         {step === 'ended' && (
-          <div className="p-8 flex flex-col items-center text-center gap-5 animate-fadeIn">
-            <div className="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-600 flex items-center justify-center text-3xl">
+          <div className="p-8 flex flex-col items-center justify-center text-center gap-4 animate-fadeIn">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-3xl">
               🌿
             </div>
             <div className="flex flex-col gap-1 max-w-sm">
-              <h3 className="font-headline font-bold text-xl text-on-background">
-                {t('sos_session_ended_title', 'Support session ended.')}
+              <h3 className="font-headline font-bold text-lg text-on-background">
+                {t('sos_session_ended', 'Support session ended.')}
               </h3>
               <p className="text-xs text-on-surface-variant leading-relaxed">
                 {t(
                   'sos_session_ended_desc',
-                  'We hope this session felt supportive. Remember, campus counselors and emergency helplines are always here for you.'
+                  'We hope this conversation helped bring some calm and clarity. Take your time to reflect and breathe.'
                 )}
               </p>
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
+
+            <div className="flex flex-col sm:flex-row items-center gap-3 mt-4 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={handleClose}
-                className="px-5 py-2.5 rounded-full bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-all shadow-sm"
+                className="w-full sm:w-auto px-6 py-2.5 rounded-full bg-primary text-on-primary text-xs font-semibold shadow-sm hover:bg-primary-container transition-colors"
               >
                 {t('sos_return_dashboard', 'Return to Dashboard')}
               </button>
               <button
                 type="button"
                 onClick={handleResetModal}
-                className="px-5 py-2.5 rounded-full bg-surface-container hover:bg-surface-variant text-on-surface text-xs font-semibold transition-colors"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-full bg-surface-container hover:bg-surface-variant text-xs font-semibold text-on-surface transition-colors"
               >
-                {t('sos_new_request', 'Start New Support Request')}
+                {t('sos_start_new_request', 'Start New Support Request')}
               </button>
             </div>
           </div>
         )}
 
-        {/* Step: 4 Support Options */}
+        {/* 4. Options View (Default) */}
         {step === 'options' && (
-          <div className="flex flex-col gap-3.5">
+          <div className="p-6 overflow-y-auto flex flex-col gap-3.5">
+            {errorMessage && (
+              <div className="p-3 rounded-2xl bg-error-container/40 border border-error/40 text-xs text-on-error-container flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm text-error">error</span>
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
             {/* OPTION 1 — DIRECT COUNSELOR CALL */}
             <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 hover:border-primary/40 transition-all shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center text-xl shrink-0 mt-0.5">
+                <div className="w-10 h-10 rounded-2xl bg-primary-container/60 text-primary flex items-center justify-center text-xl shrink-0 mt-0.5">
                   📞
                 </div>
                 <div className="flex flex-col">
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
                     <h3 className="font-headline font-bold text-sm text-on-background">
                       {t('sos_call_counselor', 'Call Counselor')}
                     </h3>
-                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold uppercase tracking-wider">
-                      {t('sos_demo_label', 'SIH Demo Support Contact')}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-medium border border-outline-variant/40">
+                      {t('sos_demo_contact_badge', 'SIH Demo Support Contact')}
                     </span>
                   </div>
                   <p className="text-xs text-on-surface-variant leading-relaxed mt-0.5">
@@ -224,14 +245,14 @@ export const EmergencySupportModal: React.FC<Props> = ({
                       'Speak directly with a counselor using the available contact number.'
                     )}
                   </p>
-                  <span className="text-xs font-mono font-bold text-primary mt-1">
+                  <span className="text-sm font-mono font-bold text-primary mt-1">
                     9975873744
                   </span>
                 </div>
               </div>
               <a
                 href="tel:9975873744"
-                className="px-4 py-2 rounded-full bg-primary text-on-primary text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-primary-container shrink-0 transition-all active:scale-95 shadow-sm"
+                className="px-4 py-2 rounded-full bg-primary text-on-primary text-xs font-semibold flex items-center justify-center gap-1.5 shrink-0 hover:bg-primary-container transition-all active:scale-95 shadow-sm"
               >
                 <span className="material-symbols-outlined text-sm">call</span>
                 <span>{t('sos_call_now', 'Call Now')}</span>
@@ -327,7 +348,7 @@ export const EmergencySupportModal: React.FC<Props> = ({
                 <div className="p-3 rounded-xl bg-surface-container-lowest border border-error/30 flex items-center justify-between">
                   <div className="flex flex-col">
                     <span className="text-xs font-bold text-on-background">112</span>
-                    <span className="text-[11px] text-on-surface-variant">Emergency Services</span>
+                    <span className="text-[10px] text-on-surface-variant">Emergency Services</span>
                   </div>
                   <a
                     href="tel:112"

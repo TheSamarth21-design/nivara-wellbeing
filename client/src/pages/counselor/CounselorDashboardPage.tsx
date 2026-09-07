@@ -3,9 +3,34 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { ApiClient } from '../../lib/apiClient';
 import { LanguageToggle } from '../../components/common/LanguageToggle';
+import {
+  supportRequestService,
+  SupportRequestDoc,
+  JitsiJoinAuthorization
+} from '../../services/supportRequestService';
+import { JitsiCall } from '../../features/sos/JitsiCall';
+
+const WaitingDurationBadge: React.FC<{ createdAt: Date }> = ({ createdAt }) => {
+  const [seconds, setSeconds] = useState(() => {
+    const created = createdAt instanceof Date ? createdAt : new Date(createdAt);
+    return Math.max(0, Math.floor((Date.now() - created.getTime()) / 1000));
+  });
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const created = createdAt instanceof Date ? createdAt : new Date(createdAt);
+      setSeconds(Math.max(0, Math.floor((Date.now() - created.getTime()) / 1000)));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [createdAt]);
+
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return <span>{`${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`}</span>;
+};
 
 export const CounselorDashboardPage: React.FC = () => {
-  const { profile, logout } = useAuth();
+  const { user, profile, logout } = useAuth();
   const { t } = useLanguage();
   const [queue, setQueue] = useState<any[]>([]);
   const [activeRequest, setActiveRequest] = useState<any>(null);
@@ -13,6 +38,13 @@ export const CounselorDashboardPage: React.FC = () => {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Real-time SOS Audio & Video Calls state
+  const [incomingSOSRequests, setIncomingSOSRequests] = useState<SupportRequestDoc[]>([]);
+  const [activeSOSCall, setActiveSOSCall] = useState<
+    (JitsiJoinAuthorization & { studentName: string }) | null
+  >(null);
+  const [sosActionLoading, setSosActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
     loadQueue();
@@ -78,6 +110,74 @@ export const CounselorDashboardPage: React.FC = () => {
       }
     } catch (e) {
       // silent
+    }
+  };
+
+  // Real-time Firestore listener for incoming SOS Audio & Video calls
+  useEffect(() => {
+    const unsubscribe = supportRequestService.listenToPendingRequests(
+      (requests) => {
+        setIncomingSOSRequests(requests);
+      },
+      (error) => {
+        console.warn('[CounselorDashboard] Pending SOS requests listener note:', error);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const handleAcceptSOSCall = async (req: SupportRequestDoc) => {
+    const counselorId = user?.uid || profile?.wellbeingId || 'counselor-duty';
+    const counselorName = profile?.name ? `Dr. ${profile.name}` : 'Campus Clinical Counselor';
+    setSosActionLoading(req.requestId);
+
+    try {
+      // 1. Mark accepted in Firestore and backend
+      await supportRequestService.acceptSupportRequest(req.requestId, counselorId, counselorName);
+
+      // 2. Obtain Jitsi authorization with counselor moderator rights
+      const joinAuth = await supportRequestService.getJoinAuthorization(
+        req.requestId,
+        req.roomName,
+        req.callType,
+        true
+      );
+
+      // 3. Mark call as active in Firestore
+      await supportRequestService.markCallActive(req.requestId);
+
+      // 4. Enter call
+      setActiveSOSCall({
+        ...joinAuth,
+        studentName: req.studentName || 'Student'
+      });
+    } catch (err) {
+      console.error('[CounselorDashboard] Error accepting SOS call:', err);
+    } finally {
+      setSosActionLoading(null);
+    }
+  };
+
+  const handleDeclineSOSCall = async (req: SupportRequestDoc) => {
+    setSosActionLoading(req.requestId);
+    try {
+      await supportRequestService.declineSupportRequest(req.requestId);
+      setIncomingSOSRequests((prev) => prev.filter((r) => r.requestId !== req.requestId));
+    } catch (err) {
+      console.error('[CounselorDashboard] Error declining SOS call:', err);
+    } finally {
+      setSosActionLoading(null);
+    }
+  };
+
+  const handleEndSOSCall = async () => {
+    if (activeSOSCall) {
+      try {
+        await supportRequestService.completeSupportRequest(activeSOSCall.requestId);
+      } catch (err) {
+        console.error('[CounselorDashboard] Error ending SOS call:', err);
+      }
+      setActiveSOSCall(null);
     }
   };
 
@@ -172,6 +272,22 @@ export const CounselorDashboardPage: React.FC = () => {
     }
   };
 
+  // Active Live Jitsi Call Mode for Counselor
+  if (activeSOSCall) {
+    return (
+      <JitsiCall
+        roomName={activeSOSCall.roomName}
+        type={activeSOSCall.callType}
+        userName={profile?.name ? `Dr. ${profile.name}` : 'Campus Clinical Counselor'}
+        userEmail={user?.email || 'counselor@nivara.internal'}
+        jwtToken={activeSOSCall.jwtToken}
+        domain={activeSOSCall.jitsiDomain}
+        isModerator={true}
+        onCallEnd={handleEndSOSCall}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-on-background flex flex-col pb-16 selection:bg-tertiary-fixed">
       {/* Header */}
@@ -236,6 +352,132 @@ export const CounselorDashboardPage: React.FC = () => {
               🔒 Zero PII Exposed
             </span>
           </div>
+        </section>
+
+        {/* PROMINENT TOP SECTION: LIVE SOS EMERGENCY CALLS */}
+        <section className="p-6 rounded-3xl bg-surface-container-lowest border-2 border-rose-500/30 shadow-md flex flex-col gap-4 animate-fadeIn">
+          <div className="flex items-center justify-between border-b border-surface-variant/40 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500 text-white flex items-center justify-center font-bold text-sm shadow-sm animate-pulse">
+                SOS
+              </div>
+              <div>
+                <h2 className="font-headline font-bold text-lg text-rose-700 dark:text-rose-400 flex items-center gap-2">
+                  <span>LIVE SOS EMERGENCY CALLS</span>
+                  {incomingSOSRequests.length > 0 ? (
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-rose-500 text-white font-bold animate-pulse">
+                      {incomingSOSRequests.length} Waiting
+                    </span>
+                  ) : (
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20">
+                      Live Radar Active
+                    </span>
+                  )}
+                </h2>
+                <p className="text-xs text-on-surface-variant">
+                  Real-time 8x8 JaaS private emergency video and audio connections with students.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+              <span className="text-xs text-on-surface-variant hidden sm:inline">Listening for SOS alerts</span>
+            </div>
+          </div>
+
+          {incomingSOSRequests.length === 0 ? (
+            <div className="p-5 rounded-2xl bg-surface-container-low/50 border border-outline-variant/30 flex items-center justify-between gap-3 text-xs text-on-surface-variant">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-500 text-lg">check_circle</span>
+                <span>No pending emergency calls right now. Waiting student alerts will appear here instantly.</span>
+              </div>
+              <span className="text-[11px] font-mono text-on-surface-variant/80">JaaS 8x8.vc Ready</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {incomingSOSRequests.map((sos) => {
+                const isAudio = sos.callType === 'audio';
+                const timeReceived = sos.createdAt instanceof Date
+                  ? sos.createdAt.toLocaleTimeString()
+                  : new Date(sos.createdAt).toLocaleTimeString();
+
+                return (
+                  <div
+                    key={sos.requestId}
+                    className="p-5 rounded-2xl bg-surface-container-lowest border-2 border-rose-400 dark:border-rose-800 shadow-lg flex flex-col justify-between gap-4"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0 ${
+                          isAudio ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/20 text-rose-600 dark:text-rose-400'
+                        }`}>
+                          <span className="material-symbols-outlined">
+                            {isAudio ? 'mic' : 'videocam'}
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="font-bold text-base text-on-background">
+                            {sos.studentName || 'Student'}
+                          </span>
+                          <span className="text-xs font-semibold text-primary">
+                            {isAudio ? 'Audio Call' : 'Video Call'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <span className="text-[10px] px-2.5 py-1 rounded-full bg-rose-500 text-white font-bold uppercase tracking-wider">
+                        Live Call
+                      </span>
+                    </div>
+
+                    {/* Meta details: Waiting duration & Time received */}
+                    <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-surface-container-low text-xs border border-outline-variant/30">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+                          Waiting Duration
+                        </span>
+                        <div className="font-mono font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                          <WaitingDurationBadge createdAt={sos.createdAt} />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+                          Time Received
+                        </span>
+                        <span className="font-medium text-on-surface">
+                          {timeReceived}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons: Accept Call & Decline */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleAcceptSOSCall(sos)}
+                        disabled={sosActionLoading === sos.requestId}
+                        className="flex-1 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-sm">call</span>
+                        <span>{sosActionLoading === sos.requestId ? 'Authorizing JaaS...' : 'Accept Call'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeclineSOSCall(sos)}
+                        disabled={sosActionLoading === sos.requestId}
+                        className="px-5 py-2.5 rounded-full bg-surface-container hover:bg-surface-variant text-on-surface text-xs font-semibold transition-colors border border-outline-variant/40"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         {/* Triage Overview Statistics */}

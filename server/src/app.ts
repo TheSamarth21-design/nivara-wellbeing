@@ -54,6 +54,7 @@ app.use('/api/companion', authMiddleware, companionRouter);
 app.use('/api/twin', authMiddleware, twinRouter);
 app.use('/api/simulator', authMiddleware, simulatorRouter);
 app.use('/api/support', authMiddleware, supportRouter);
+app.use('/api/v1/support', authMiddleware, supportRouter);
 app.use('/api/counsellor', authMiddleware, counsellorRouter);
 app.use('/api/radar', authMiddleware, radarRouter);
 app.use('/api/privacy', authMiddleware, privacyRouter);

@@ -77,6 +77,9 @@ export const checkinService = {
    * Throws a real error if unauthenticated or if write fails.
    */
   async submitCheckin(input: CheckinInput): Promise<StoredCheckin> {
+    if (!auth.currentUser) {
+      await auth.authStateReady().catch(() => {});
+    }
     const user = auth.currentUser;
     if (!user) {
       throw new Error('User must be authenticated with Firebase to submit a check-in.');
@@ -130,6 +133,9 @@ export const checkinService = {
    * Fetch all check-ins for the currently authenticated user, newest first.
    */
   async getCheckins(): Promise<StoredCheckin[]> {
+    if (!auth.currentUser) {
+      await auth.authStateReady().catch(() => {});
+    }
     const user = auth.currentUser;
     if (!user) {
       return [];
@@ -151,6 +157,9 @@ export const checkinService = {
    * Fetch the most recent check-ins for the currently authenticated user (default limit: 7).
    */
   async getRecentCheckins(limitCount = 7): Promise<StoredCheckin[]> {
+    if (!auth.currentUser) {
+      await auth.authStateReady().catch(() => {});
+    }
     const user = auth.currentUser;
     if (!user) {
       return [];
@@ -173,6 +182,9 @@ export const checkinService = {
    * Returns the checkin if completed today, or null if not yet completed.
    */
   async getTodayCheckin(): Promise<StoredCheckin | null> {
+    if (!auth.currentUser) {
+      await auth.authStateReady().catch(() => {});
+    }
     const user = auth.currentUser;
     if (!user) {
       return null;

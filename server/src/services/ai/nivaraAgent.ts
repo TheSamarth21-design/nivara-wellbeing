@@ -13,7 +13,8 @@ export class NivaraAgent {
     db.addAIMessage({
       wellbeing_id: wellbeingId,
       sender: 'user',
-      message
+      message,
+      safety_tier: 'SAFE'
     });
 
     // 2. Strict 3-Tier Safety Engine Check (Crisis & Escalation Priority)
