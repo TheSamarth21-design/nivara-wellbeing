@@ -14,6 +14,7 @@ import { SilentCounsellorView } from '../../features/counsellor/SilentCounsellor
 import { MyWellbeingView } from '../../features/assessment/MyWellbeingView';
 import { SafetyModeModal } from '../../features/safety/SafetyModeModal';
 import { BreathingModal } from '../../features/home/BreathingModal';
+import { EmergencySupportModal } from '../../features/sos/EmergencySupportModal';
 import { ErrorBoundary } from '../../components/common/ErrorBoundary';
 
 export const StudentDashboardPage: React.FC = () => {
@@ -22,6 +23,7 @@ export const StudentDashboardPage: React.FC = () => {
   const [twinStatus, setTwinStatus] = useState<TwinStatus | null>(null);
   const [profileData, setProfileData] = useState<any>(null);
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
+  const [isSOSOpen, setIsSOSOpen] = useState(false);
   const [isBreathingOpen, setIsBreathingOpen] = useState(false);
   const [helplines, setHelplines] = useState<CrisisResourceItem[]>([]);
   const [currentName, setCurrentName] = useState<string>(() => {
@@ -74,6 +76,7 @@ export const StudentDashboardPage: React.FC = () => {
         wellbeingId={wellbeingId}
         role="student"
         onOpenSafety={() => setIsSafetyOpen(true)}
+        onOpenSOS={() => setIsSOSOpen(true)}
         onOpenPrivacy={() => setActiveTab('privacy')}
         onOpenBreathing={() => setIsBreathingOpen(true)}
         onLogout={logout}
@@ -90,6 +93,7 @@ export const StudentDashboardPage: React.FC = () => {
               onCheckinSubmitted={loadAppState}
               onNavigateTab={setActiveTab}
               onOpenBreathing={() => setIsBreathingOpen(true)}
+              onOpenSOS={() => setIsSOSOpen(true)}
               preferredName={currentName}
               onUpdatePreferredName={handleUpdateName}
             />
@@ -105,6 +109,7 @@ export const StudentDashboardPage: React.FC = () => {
           {activeTab === 'talk' && (
             <TalkCompanionChat
               onOpenSafety={() => setIsSafetyOpen(true)}
+              onOpenSOS={() => setIsSOSOpen(true)}
               onRequestCounsellor={() => setActiveTab('support')}
               onNavigateTab={setActiveTab}
             />
@@ -113,7 +118,11 @@ export const StudentDashboardPage: React.FC = () => {
             <DigitalTwinView twinStatus={twinStatus} onNavigateTab={setActiveTab} />
           )}
           {(activeTab === 'support' || activeTab === 'counsellor') && (
-            <SilentCounsellorView role="STUDENT" onNavigateTab={setActiveTab} />
+            <SilentCounsellorView
+              role="STUDENT"
+              onNavigateTab={setActiveTab}
+              onOpenSOS={() => setIsSOSOpen(true)}
+            />
           )}
           {(activeTab === 'profile' || activeTab === 'privacy') && (
             <PrivacyCenterView onLoggedOut={logout} />
@@ -128,7 +137,16 @@ export const StudentDashboardPage: React.FC = () => {
       <SafetyModeModal
         isOpen={isSafetyOpen}
         onClose={() => setIsSafetyOpen(false)}
+        onOpenSOS={() => setIsSOSOpen(true)}
         helplines={helplines}
+      />
+      <EmergencySupportModal
+        isOpen={isSOSOpen}
+        onClose={() => setIsSOSOpen(false)}
+        onOpenSafety={() => {
+          setIsSOSOpen(false);
+          setIsSafetyOpen(true);
+        }}
       />
       <BreathingModal
         isOpen={isBreathingOpen}

@@ -6,9 +6,10 @@ import { useLanguage } from '../../context/LanguageContext';
 interface Props {
   role: UserRole;
   onNavigateTab?: (tab: string) => void;
+  onOpenSOS?: () => void;
 }
 
-export const SilentCounsellorView: React.FC<Props> = ({ role, onNavigateTab }) => {
+export const SilentCounsellorView: React.FC<Props> = ({ role, onNavigateTab, onOpenSOS }) => {
   const { t } = useLanguage();
   const [queue, setQueue] = useState<any[]>([]);
   const [activeRequest, setActiveRequest] = useState<any>(null);
@@ -266,6 +267,32 @@ export const SilentCounsellorView: React.FC<Props> = ({ role, onNavigateTab }) =
           {t('support_sub')}
         </p>
       </div>
+
+      {/* SOS Emergency Support Prompt */}
+      {onOpenSOS && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-rose-500/10 border border-rose-300/40 dark:border-rose-800/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-2xl bg-rose-500 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-xs">
+              SOS
+            </span>
+            <div className="flex flex-col">
+              <span className="font-bold text-xs text-rose-700 dark:text-rose-300">
+                {t('sos_support', 'SOS Support')} — Need Urgent Counseling?
+              </span>
+              <span className="text-[11px] text-on-surface-variant">
+                Direct phone call (9975873744), private audio, or video session with a counselor
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenSOS}
+            className="px-4 py-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shrink-0 shadow-sm transition-all"
+          >
+            {t('sos_support', 'SOS Support')}
+          </button>
+        </div>
+      )}
 
       {/* Strict Anonymity Guarantee Notice */}
       <div className="p-4 rounded-3xl bg-secondary-container/20 border border-secondary-container/40 flex items-start gap-3 shadow-sm">

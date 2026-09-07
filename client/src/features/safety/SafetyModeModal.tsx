@@ -5,9 +5,10 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   helplines: CrisisResourceItem[];
+  onOpenSOS?: () => void;
 }
 
-export const SafetyModeModal: React.FC<Props> = ({ isOpen, onClose, helplines }) => {
+export const SafetyModeModal: React.FC<Props> = ({ isOpen, onClose, helplines, onOpenSOS }) => {
   if (!isOpen) return null;
 
   return (
@@ -28,6 +29,34 @@ export const SafetyModeModal: React.FC<Props> = ({ isOpen, onClose, helplines })
             ✕
           </button>
         </div>
+
+        {/* SOS Emergency Counselor Shortcut */}
+        {onOpenSOS && (
+          <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-300/40 dark:border-rose-800/40 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="w-9 h-9 rounded-xl bg-rose-500 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                SOS
+              </span>
+              <div className="flex flex-col">
+                <span className="font-bold text-xs text-rose-700 dark:text-rose-300">
+                  Campus Counselor SOS Support
+                </span>
+                <span className="text-[11px] text-on-surface-variant">
+                  Direct call (9975873744), audio, or video session
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                onClose();
+                onOpenSOS();
+              }}
+              className="px-4 py-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shrink-0 shadow-sm transition-all"
+            >
+              Open SOS
+            </button>
+          </div>
+        )}
 
         <div className="bg-primary-fixed/20 p-4 rounded-2xl border border-primary-fixed text-xs text-primary font-medium">
           If you or someone around you is in immediate danger or feeling unable to cope, please call one of the verified 24/7 toll-free helplines below.

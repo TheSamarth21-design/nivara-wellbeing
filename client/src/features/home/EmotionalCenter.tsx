@@ -4,12 +4,14 @@ import { ApiClient } from '../../lib/apiClient';
 import { AiApiClient } from '../../services/aiApi';
 import { checkinService } from '../../services/checkinService';
 import { useLanguage } from '../../context/LanguageContext';
+import { SOSButton } from '../sos/SOSButton';
 
 interface Props {
   twinStatus: TwinStatus | null;
   onCheckinSubmitted: () => void;
   onNavigateTab: (tab: string) => void;
   onOpenBreathing: () => void;
+  onOpenSOS?: () => void;
   preferredName?: string;
   onUpdatePreferredName?: (name: string) => void;
 }
@@ -19,6 +21,7 @@ export const EmotionalCenter: React.FC<Props> = ({
   onCheckinSubmitted,
   onNavigateTab,
   onOpenBreathing,
+  onOpenSOS,
   preferredName,
   onUpdatePreferredName
 }) => {
@@ -176,14 +179,19 @@ export const EmotionalCenter: React.FC<Props> = ({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onNavigateTab('wellbeing')}
-          className="px-5 py-2.5 rounded-full bg-[#006d40] hover:bg-[#005a34] text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all self-start sm:self-auto shrink-0 active:scale-98"
-        >
-          <span className="material-symbols-outlined text-base">add</span>
-          <span>{t('new_checkin_btn', '+ New Check-in')}</span>
-        </button>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0 flex-wrap">
+          {onOpenSOS && (
+            <SOSButton variant="default" onClick={onOpenSOS} />
+          )}
+          <button
+            type="button"
+            onClick={() => onNavigateTab('wellbeing')}
+            className="px-5 py-2.5 rounded-full bg-[#006d40] hover:bg-[#005a34] text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-98"
+          >
+            <span className="material-symbols-outlined text-base">add</span>
+            <span>{t('new_checkin_btn', '+ New Check-in')}</span>
+          </button>
+        </div>
       </section>
 
       {/* 2. TODAY: "How are things feeling today?" Mint Card */}
@@ -485,6 +493,37 @@ export const EmotionalCenter: React.FC<Props> = ({
           </button>
         </div>
       </section>
+
+      {/* 7. SOS Emergency Support Section */}
+      {onOpenSOS && (
+        <section className="bg-rose-500/5 dark:bg-rose-950/20 rounded-3xl p-6 sm:p-7 border border-rose-300/40 dark:border-rose-800/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0">
+              SOS
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                {t('sos_support', 'SOS Support')}
+              </span>
+              <h3 className="font-headline font-bold text-base sm:text-lg text-on-background">
+                {t('sos_modal_title', 'Emergency Support')}
+              </h3>
+              <p className="text-xs text-on-surface-variant max-w-lg">
+                {t('sos_modal_subtitle', 'You are not alone. Choose how you would like to get support.')}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0 w-full sm:w-auto">
+            <button
+              onClick={onOpenSOS}
+              className="w-full sm:w-auto px-5 py-3 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all active:scale-98 flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined text-sm">emergency</span>
+              <span>{t('sos_support', 'SOS Support')}</span>
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   );
 };

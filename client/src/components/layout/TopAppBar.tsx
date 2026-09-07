@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserRole } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
+import { SOSButton } from '../../features/sos/SOSButton';
 
 interface Props {
   wellbeingId: string;
@@ -8,6 +9,7 @@ interface Props {
   language?: string;
   onLanguageChange?: (lang: 'en' | 'hi' | 'mr') => void;
   onOpenSafety: () => void;
+  onOpenSOS?: () => void;
   onOpenPrivacy: () => void;
   onSwitchRole?: (role: UserRole) => void;
   onOpenBreathing?: () => void;
@@ -20,6 +22,7 @@ export const TopAppBar: React.FC<Props> = ({
   wellbeingId,
   role,
   onOpenSafety,
+  onOpenSOS,
   onOpenPrivacy,
   onOpenBreathing,
   onLogout,
@@ -91,6 +94,11 @@ export const TopAppBar: React.FC<Props> = ({
                 <option value="mr">मराठी (Marathi)</option>
               </select>
             </div>
+
+            {/* SOS Emergency Support Button */}
+            {onOpenSOS && (
+              <SOSButton variant="header" onClick={onOpenSOS} />
+            )}
 
             {/* Emergency Crisis Button */}
             <button
@@ -246,6 +254,24 @@ export const TopAppBar: React.FC<Props> = ({
               {/* Quick Wellbeing Shortcuts */}
               <div className="p-4 flex flex-col gap-1.5">
                 <span className="text-xs font-bold text-on-background mb-1">Tools & Safety</span>
+
+                {onOpenSOS && (
+                  <button
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      onOpenSOS();
+                    }}
+                    className="p-3 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 text-left flex items-center gap-3 text-xs text-rose-700 dark:text-rose-300 border border-rose-300/40 dark:border-rose-800/40 transition-colors"
+                  >
+                    <span className="w-7 h-7 rounded-lg bg-rose-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-sm">SOS</span>
+                    <div className="flex flex-col">
+                      <span className="font-bold">{t('sos_support', 'SOS Support')}</span>
+                      <span className="text-[10px] opacity-80">
+                        {t('sos_counselor_call_desc', 'Instant call, audio & video counseling')}
+                      </span>
+                    </div>
+                  </button>
+                )}
 
                 {onOpenBreathing && (
                   <button

@@ -3,14 +3,16 @@ import { ApiClient } from '../../lib/apiClient';
 import { AIMessageItem } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
+import { SOSButton } from '../sos/SOSButton';
 
 interface Props {
   onOpenSafety: () => void;
+  onOpenSOS?: () => void;
   onRequestCounsellor: () => void;
   onNavigateTab?: (tab: string) => void;
 }
 
-export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCounsellor, onNavigateTab }) => {
+export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, onRequestCounsellor, onNavigateTab }) => {
   const { t, language } = useLanguage();
   const { user, profile } = useAuth();
   const userKey = profile?.wellbeingId || user?.uid || 'guest';
@@ -339,6 +341,10 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
             <span className="material-symbols-outlined text-sm">support_agent</span>
             <span>{t('tab_support')}</span>
           </button>
+
+          {onOpenSOS && (
+            <SOSButton variant="header" onClick={onOpenSOS} />
+          )}
         </div>
       </div>
 
@@ -450,6 +456,27 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onRequestCoun
                 }`}
               >
                 {m.message}
+
+                {isRed && (
+                  <div className="mt-3 pt-2.5 border-t border-error/30 flex flex-wrap items-center gap-2">
+                    {onOpenSOS && (
+                      <button
+                        onClick={onOpenSOS}
+                        className="px-3.5 py-1.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold shadow-xs flex items-center gap-1.5 transition-all active:scale-95"
+                      >
+                        <span className="material-symbols-outlined text-sm">emergency</span>
+                        <span>{t('sos_support', 'SOS Support')}</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={onOpenSafety}
+                      className="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-variant text-on-surface text-[11px] font-semibold flex items-center gap-1 border border-outline-variant/40"
+                    >
+                      <span className="material-symbols-outlined text-sm text-error">call</span>
+                      <span>{t('helplines_btn', 'Helplines')}</span>
+                    </button>
+                  </div>
+                )}
 
                 {isYellow && (
                   <div className="mt-3 pt-2 border-t border-tertiary-container/40 flex items-center gap-2">
