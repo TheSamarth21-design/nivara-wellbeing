@@ -5,6 +5,7 @@ import { AiApiClient } from '../../services/aiApi';
 import { checkinService } from '../../services/checkinService';
 import { useLanguage } from '../../context/LanguageContext';
 import { SOSButton } from '../sos/SOSButton';
+import { WellnessSection } from '../wellness/WellnessSection';
 
 interface Props {
   twinStatus: TwinStatus | null;
@@ -438,7 +439,10 @@ export const EmotionalCenter: React.FC<Props> = ({
         </div>
       </section>
 
-      {/* 6. Quick Action Cards (Talk & 2-Minute Reset) */}
+      {/* 6. Mind Relaxation & Wellness Exercises */}
+      <WellnessSection onOpenSOS={onOpenSOS} />
+
+      {/* 7. Quick Action Cards (Talk & 2-Minute Reset) */}
       <section className="grid grid-cols-1 md:grid-cols-12 gap-5">
         <div className="md:col-span-8 bg-surface-container-lowest rounded-3xl p-7 shadow-sm border border-surface-variant/50 relative overflow-hidden flex flex-col justify-between min-h-[200px]">
           <div className="absolute -top-10 -right-10 w-48 h-48 bg-primary-fixed/30 rounded-full blur-2xl opacity-60 pointer-events-none" />
