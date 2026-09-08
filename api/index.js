@@ -49352,6 +49352,27 @@ checkinsRouter.get("/adaptive", (req, res) => {
   const adaptive = db.getAdaptiveQuestion(wellbeingId);
   res.json({ adaptiveQuestion: adaptive });
 });
+checkinsRouter.get("/recent", (req, res) => {
+  const wellbeingId = req.user.wellbeingId;
+  const history = db.getEnhancedCheckins(wellbeingId, 7);
+  res.json({ checkins: history });
+});
+checkinsRouter.get("/trends", (req, res) => {
+  const wellbeingId = req.user.wellbeingId;
+  const history = db.getEnhancedCheckins(wellbeingId, 14);
+  const twin = BaselineEngine.calculateTwinState(wellbeingId);
+  const trends = {
+    recentMoodTrend: twin.currentPatternState === "Improving" ? "improving" : twin.currentPatternState === "Needs Attention" ? "declining" : "stable",
+    stressTrend: history.some((h) => h.stress_level === "High") ? "high" : "moderate",
+    sleepTrend: history.some((h) => h.sleep_quality === "Poor") ? "poor" : "good",
+    academicPressure: "moderate",
+    keyConcerns: twin.currentPatternState === "Needs Attention" ? ["Elevated stress"] : [],
+    positiveSignals: twin.insights.slice(0, 2),
+    checkinCount: history.length,
+    latestMood: history[0]?.mood_tier || "Okay"
+  };
+  res.json({ trends });
+});
 
 // server/src/routes/companion.ts
 var import_express4 = __toESM(require_express2());
@@ -49593,22 +49614,24 @@ var NivaraAgent = class {
       const lengthInstruction = supportStyle === "short" ? "Keep answers very concise (1 to 2 sentences max)." : supportStyle === "detailed" ? "Provide a thoughtful, well-explained response (3 to 4 sentences)." : "Keep answers balanced and readable on mobile (2 to 3 sentences).";
       const lang = profile?.preferences?.preferredLanguage || ctx.preferredLanguage || "en";
       const langInstruction = lang === "hi" ? "Respond in empathetic conversational Hindi / Hinglish." : lang === "mr" ? "Respond in empathetic Marathi." : "Respond in empathetic English.";
-      const systemPrompt = `You are Nivara AI, a warm, non-clinical student wellbeing companion on an Indian campus.
-Tone & Personalization Directives:
-- ${styleInstruction}
-- ${lengthInstruction}
-- ${langInstruction}
-- Preferred student name: ${ctx.preferredName || "Friend"}
-${profile?.currentContext?.situation ? `- Current situation: ${profile.currentContext.situation}` : ""}
-${profile?.wellbeingPreferences?.mainConcerns?.length ? `- Main areas of support: ${profile.wellbeingPreferences.mainConcerns.join(", ")}` : ""}
-${ctx.academicWorkload ? `- Workload: ${ctx.academicWorkload}` : ""}
-${ctx.recentCheckinMood ? `- Recent mood pattern: ${ctx.recentCheckinMood}` : ""}
-${ctx.approvedMemories?.length ? `- Approved memories: ${ctx.approvedMemories.map((m) => `${m.key}: ${m.value}`).join("; ")}` : ""}
+      const systemPrompt = `You are NIVARA, a warm, friendly, calm, and supportive AI wellbeing companion for college students.
+Speak like a caring, trustworthy peer or friend \u2014 NOT like a formal therapist or generic AI assistant.
 
-Strict Boundaries:
-- NEVER give clinical medical diagnoses, psychiatric evaluations, or medication advice.
-- NEVER use toxic positivity (e.g. "Just smile! Everything is great!").
-- Do NOT repeat the student's profile back to them robotically. Use context naturally when relevant.`;
+Key Directives:
+- Keep responses SHORT (1-4 sentences).
+- Follow: LISTEN -> UNDERSTAND -> RESPOND -> ASK A NATURAL FOLLOW-UP QUESTION.
+- Use natural emojis (\u{1F615}, \u{1F605}, \u{1F642}) where appropriate.
+- STRICTLY AVOID robotic boilerplate phrases like "Your feelings are completely valid", "Here are a couple of gentle steps", or "Remember you don't have to tackle everything at once".
+- Do not repeat the student's name in every single message.
+- Subtly integrate student context:
+  * Preferred name: ${ctx.preferredName || "Friend"}
+  ${profile?.currentContext?.situation ? `* Current situation: ${profile.currentContext.situation}` : ""}
+  ${profile?.wellbeingPreferences?.mainConcerns?.length ? `* Concerns: ${profile.wellbeingPreferences.mainConcerns.join(", ")}` : ""}
+  ${ctx.academicWorkload ? `* Workload: ${ctx.academicWorkload}` : ""}
+  ${ctx.recentCheckinMood ? `* Recent mood: ${ctx.recentCheckinMood}` : ""}
+  ${ctx.approvedMemories?.length ? `* Approved memories: ${ctx.approvedMemories.map((m) => `${m.key}: ${m.value}`).join("; ")}` : ""}
+- If student expresses panic or racing mind, offer a quick 2-minute breathing pause.
+- NEVER give clinical medical diagnoses or medication advice.`;
       const contents = [
         ...history.map((h) => ({
           role: h.role,

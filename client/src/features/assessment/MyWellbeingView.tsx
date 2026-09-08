@@ -178,13 +178,17 @@ export const MyWellbeingView: React.FC<Props> = ({
       const derivedScore = Math.max(1, Math.min(5, 4 - anxietyPen - depPen + esteemBonus));
       const moodTierStr = derivedScore >= 4 ? 'good' : derivedScore >= 3 ? 'okay' : 'not_great';
 
-      // 3. Save directly to Firebase Firestore (throws on failure, no silent fake success)
+      // 3. Save directly to Firebase Firestore with normalized scores and duplicate protection
       await checkinService.submitCheckin({
         moodScore: derivedScore,
         moodTier: moodTierStr,
         energyLevel: energyLevelStr,
         stressLevel: stressLevelStr,
         sleepQuality: sleepQualityStr,
+        stressScore: (formData.study_load ?? 3) >= 4 ? 3 : (formData.study_load ?? 3) >= 2 ? 2 : 1,
+        anxietyScore: formData.anxiety_level ?? null,
+        sleepScore: formData.sleep_quality ?? null,
+        academicPressureScore: formData.study_load ?? null,
         feelingTags: [],
         note: formData.text_reflection?.trim() || '',
         date: todayStr,

@@ -118,6 +118,7 @@ export interface WellbeingSummarySharePayload {
 export interface AiChatRequest {
   message: string;
   conversation_id?: string;
+  context?: Record<string, unknown>;
 }
 
 /**
@@ -129,5 +130,8 @@ export interface AiChatResponse {
   conversation_id: string;
   domain?: string;
   safety_status?: 'normal' | 'crisis' | 'warning' | string;
+  suggested_quick_replies?: string[];
+  suggested_exercise?: string;
+  detected_emotion?: string;
   [key: string]: unknown;
 }

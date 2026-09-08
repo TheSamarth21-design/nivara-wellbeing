@@ -82,6 +82,8 @@ export interface AIMessageItem {
   message: string;
   safety_tier: 'GREEN' | 'YELLOW' | 'RED';
   suggested_action?: string;
+  suggested_quick_replies?: string[];
+  suggested_exercise?: string;
   created_at: string;
 }
 

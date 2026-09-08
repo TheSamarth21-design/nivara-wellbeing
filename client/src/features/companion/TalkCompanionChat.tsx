@@ -4,6 +4,7 @@ import { AIMessageItem } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
 import { SOSButton } from '../sos/SOSButton';
+import { checkinService } from '../../services/checkinService';
 
 interface Props {
   onOpenSafety: () => void;
@@ -18,6 +19,12 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
   const userKey = profile?.wellbeingId || user?.uid || 'guest';
   const storageKey = `nivara_chat_${userKey}`;
   const conversationIdStorageKey = `nivara_conv_id_${userKey}`;
+
+  const studentFirstName =
+    (profile as any)?.preferredName ||
+    profile?.name?.split(' ')[0] ||
+    user?.displayName?.split(' ')[0] ||
+    '';
 
   const [conversationId, setConversationId] = useState<string>(() => {
     try {
@@ -42,6 +49,16 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
   const [micError, setMicError] = useState<string | null>(null);
   const [memories, setMemories] = useState<any[]>([]);
   const [showMemoryDrawer, setShowMemoryDrawer] = useState(false);
+  const [wellbeingContext, setWellbeingContext] = useState<any>(null);
+
+  useEffect(() => {
+    checkinService.getWellbeingContextForAI().then((ctx) => {
+      if (ctx) {
+        setWellbeingContext(ctx);
+      }
+    }).catch(() => {});
+  }, [userKey]);
+
   const [feedbackMap, setFeedbackMap] = useState<
     Record<string, { helpful?: boolean; tag?: string; submitted?: boolean; showOptions?: boolean }>
   >({});
@@ -55,7 +72,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
 
   // Detect stress signals in conversation
   const hasStressSignals = messages.some((m) =>
-    /stress|anxious|anxiety|pressure|overwhelm|tired|can't sleep|insomnia|depressed|sad|panic|burnout|exhausted|तनाव|चिंता|थक/i.test(
+    /stress|anxious|anxiety|pressure|overwhelm|tired|can't sleep|insomnia|depressed|sad|panic|burnout|exhausted|तनाव|चिंता|थकान|ताण|काळजी/i.test(
       m.message
     )
   );
@@ -113,7 +130,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setMicError(t('talk_mic_unsupported'));
+      setMicError(t('talk_mic_unsupported', 'Microphone not supported on this device'));
       setTimeout(() => setMicError(null), 4000);
       return;
     }
@@ -130,7 +147,6 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = false;
-      // Match active app language
       recognition.lang = language === 'hi' ? 'hi-IN' : language === 'mr' ? 'mr-IN' : 'en-IN';
 
       recognition.onstart = () => {
@@ -149,7 +165,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
         console.warn('Speech recognition error:', event.error);
         setIsListening(false);
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          setMicError(t('talk_mic_permission_denied'));
+          setMicError(t('talk_mic_permission_denied', 'Microphone access denied'));
         } else {
           setMicError(`Voice error: ${event.error || 'Check microphone'}`);
         }
@@ -165,7 +181,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
     } catch (err: any) {
       console.error('Speech recognition start failed:', err);
       setIsListening(false);
-      setMicError(t('talk_mic_permission_denied'));
+      setMicError(t('talk_mic_permission_denied', 'Microphone access denied'));
       setTimeout(() => setMicError(null), 4000);
     }
   };
@@ -187,10 +203,20 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
     setInput('');
     setLoading(true);
 
-    try {
-      const res = await ApiClient.sendAIMessage(trimmed, conversationId || undefined);
+    // Assemble rich student context without PII leakage
+    const studentContext = {
+      preferred_name: studentFirstName,
+      department: (profile as any)?.department || (profile as any)?.branch || '',
+      academic_year: (profile as any)?.academicYear || (profile as any)?.year || '',
+      college: (profile as any)?.college || '',
+      recent_mood: localStorage.getItem('nivara_last_mood') || (wellbeingContext?.latest_mood ?? ''),
+      recent_wellbeing: wellbeingContext,
+      approved_memories: memories
+    };
 
-      // Preserve and store conversation_id for subsequent messages in this conversation
+    try {
+      const res = await ApiClient.sendAIMessage(trimmed, conversationId || undefined, studentContext);
+
       if (res.conversationId && res.conversationId !== conversationId) {
         setConversationId(res.conversationId);
         try {
@@ -206,9 +232,14 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
         message: res.reply,
         safety_tier: res.safetyTier,
         suggested_action: res.suggestedAction,
+        suggested_quick_replies: res.suggestedQuickReplies,
+        suggested_exercise: res.suggestedExercise,
         created_at: new Date().toISOString()
       };
       setMessages((prev) => [...prev, assistantMsg]);
+
+      // Reload memories if the conversation might have updated them
+      loadMemories();
 
       if (res.safetyTier === 'RED') {
         onOpenSafety();
@@ -271,28 +302,20 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
     setMemories([]);
   };
 
-  const quickPrompts = [
-    language === 'hi'
-      ? 'परीक्षा की तैयारी से बहुत तनाव महसूस हो रहा है'
-      : language === 'mr'
-      ? 'परीक्षेच्या दबावामुळे खूप ताण जाणवतो आहे'
-      : 'I am feeling overwhelmed with exam prep',
-    language === 'hi'
-      ? 'मन में लगातार विचारों के कारण नींद नहीं आ रही है'
-      : language === 'mr'
-      ? 'सतत विचार सुरू असल्यामुळे झोप येत नाही'
-      : 'I cannot sleep because of racing thoughts',
-    language === 'hi'
-      ? 'क्या हम एक छोटा शांतता व्यायाम कर सकते हैं?'
-      : language === 'mr'
-      ? 'आपण एक छोटा शांतता व्यायाम करू शकतो का?'
-      : 'Can we do a quick grounding exercise?',
-    language === 'hi'
-      ? 'कैंपस में थोड़ा अकेलापन महसूस होता है'
-      : language === 'mr'
-      ? 'कॅम्पसमध्ये थोडे एकटेपणा जाणवतो'
-      : 'I feel isolated on campus'
+  // Contextual introductory quick prompts for empty conversation
+  const introQuickReplies = [
+    language === 'hi' ? 'परीक्षा की तैयारी से बहुत तनाव हो रहा है 😅' : language === 'mr' ? 'परीक्षेच्या अभ्यासाचा खूप ताण आला आहे 😅' : "I'm stressed about exams",
+    language === 'hi' ? 'काफी थकान महसूस हो रही है 😕' : language === 'mr' ? 'खूप थकल्यासारखं वाटतंय 😕' : "I'm feeling exhausted",
+    language === 'hi' ? 'आज मन बहुत उदास है 😕' : language === 'mr' ? 'आज मन उदास वाटतंय 😕' : "I'm feeling sad",
+    language === 'hi' ? 'क्या हम ब्रीदिंग या रिलैक्सेशन कर सकते हैं? 🌬' : language === 'mr' ? 'आपण रिलॅक्सेशन किंवा ब्रीदिंग करू शकतो का? 🌬' : "Can we do a quick relaxation exercise?"
   ];
+
+  // Latest assistant message quick-replies for dynamic suggestions
+  const lastAssistantMsg = [...messages].reverse().find((m) => m.sender === 'assistant');
+  const activeQuickReplies =
+    lastAssistantMsg?.suggested_quick_replies && lastAssistantMsg.suggested_quick_replies.length > 0
+      ? lastAssistantMsg.suggested_quick_replies
+      : [];
 
   return (
     <div className="max-w-[800px] mx-auto px-4 py-4 flex flex-col h-[calc(100vh-140px)] animate-fadeIn">
@@ -306,7 +329,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
           />
           <div>
             <h2 className="font-headline font-semibold text-sm text-on-background">
-              {t('talk_title')}
+              {t('talk_title', 'NIVARA AI Companion')}
             </h2>
             <span className="text-[10px] text-primary flex items-center gap-1 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
@@ -319,7 +342,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
           <button
             type="button"
             onClick={handleNewConversation}
-            className="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-variant text-xs text-on-surface font-medium flex items-center gap-1 transition-colors"
+            className="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-variant text-xs text-on-surface font-medium flex items-center gap-1 transition-all active:scale-95"
             title="Start new conversation"
           >
             <span className="material-symbols-outlined text-sm">refresh</span>
@@ -328,18 +351,18 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
 
           <button
             onClick={() => setShowMemoryDrawer(!showMemoryDrawer)}
-            className="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-variant text-xs text-on-surface font-medium flex items-center gap-1"
+            className="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-variant text-xs text-on-surface font-medium flex items-center gap-1 transition-all active:scale-95"
           >
             <span className="material-symbols-outlined text-sm">psychology</span>
-            <span>{t('talk_memory_label')} ({memories.length})</span>
+            <span>{t('talk_memory_label', 'Memory')} ({memories.length})</span>
           </button>
 
           <button
             onClick={onRequestCounsellor}
-            className="px-3 py-1.5 rounded-full bg-secondary-container/40 hover:bg-secondary-container text-xs text-on-secondary-container font-semibold flex items-center gap-1"
+            className="px-3 py-1.5 rounded-full bg-secondary-container/40 hover:bg-secondary-container text-xs text-on-secondary-container font-semibold flex items-center gap-1 transition-all active:scale-95"
           >
             <span className="material-symbols-outlined text-sm">support_agent</span>
-            <span>{t('tab_support')}</span>
+            <span>{t('tab_support', 'Counselor')}</span>
           </button>
 
           {onOpenSOS && (
@@ -350,26 +373,26 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
 
       {/* Controlled Memory Drawer */}
       {showMemoryDrawer && (
-        <div className="p-4 my-2 rounded-2xl bg-surface-container border border-outline-variant/40 flex flex-col gap-2 animate-fadeIn">
+        <div className="p-4 my-2 rounded-2xl bg-surface-container border border-outline-variant/40 flex flex-col gap-2 animate-fadeIn shadow-sm">
           <div className="flex justify-between items-center">
-            <span className="text-xs font-bold text-on-background">{t('talk_memory_label')}</span>
-            <button onClick={handleClearMemory} className="text-[11px] text-error hover:underline">
-              {t('talk_clear_memory')}
+            <span className="text-xs font-bold text-on-background">{t('talk_memory_label', 'Companion Memory')}</span>
+            <button onClick={handleClearMemory} className="text-[11px] text-error hover:underline font-medium">
+              {t('talk_clear_memory', 'Clear memory')}
             </button>
           </div>
-          <p className="text-[11px] text-on-surface-variant">
-            Nivara only remembers preferences you approve. No medical inferences are permanently stored.
+          <p className="text-[11px] text-on-surface-variant leading-relaxed">
+            NIVARA subtly remembers helpful context like upcoming exams, study goals, or sleep habits. No clinical data or raw diaries are ever saved.
           </p>
           {memories.length === 0 ? (
-            <span className="text-xs text-on-surface-variant italic">No stored memories.</span>
+            <span className="text-xs text-on-surface-variant italic py-1">No stored companion memories yet.</span>
           ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {memories.map((m) => (
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              {memories.map((m, idx) => (
                 <span
-                  key={m.id}
-                  className="px-2.5 py-1 rounded-lg bg-surface-container-lowest text-[11px] text-on-surface border border-outline-variant/30"
+                  key={m.id || idx}
+                  className="px-2.5 py-1 rounded-lg bg-surface-container-lowest text-[11px] text-on-surface border border-outline-variant/30 shadow-2xs"
                 >
-                  {m.memory_key}: {m.memory_value}
+                  {m.memory_key || m.key}: {m.memory_value || m.value}
                 </span>
               ))}
             </div>
@@ -387,11 +410,11 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
 
       {/* Contextual Wellbeing Check-in Nudge */}
       {hasStressSignals && !hasCompletedCheckinToday && (
-        <div className="my-2 p-3 rounded-2xl bg-primary-container/25 border border-primary/30 flex items-center justify-between gap-3 animate-fadeIn">
+        <div className="my-2 p-3 rounded-2xl bg-primary-container/25 border border-primary/30 flex items-center justify-between gap-3 animate-fadeIn shadow-2xs">
           <div className="flex items-center gap-2.5">
             <span className="text-lg">🌿</span>
             <p className="text-xs text-on-surface font-medium leading-relaxed">
-              {t('talk_wellbeing_nudge')}
+              {t('talk_wellbeing_nudge', 'Things sound heavy right now. A quick 1-minute check-in can help track how you are doing.')}
             </p>
           </div>
           <button
@@ -399,32 +422,32 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
               if (onNavigateTab) onNavigateTab('wellbeing');
               else onRequestCounsellor();
             }}
-            className="px-3.5 py-1.5 rounded-full bg-primary text-on-primary text-xs font-semibold shrink-0 hover:opacity-90 shadow-sm transition-all"
+            className="px-3.5 py-1.5 rounded-full bg-primary text-on-primary text-xs font-semibold shrink-0 hover:opacity-90 shadow-sm transition-all active:scale-95"
           >
-            {t('talk_take_checkin')}
+            {t('talk_take_checkin', 'Take Check-in')}
           </button>
         </div>
       )}
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-3">
+      <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-3.5">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center p-6 gap-3">
-            <div className="w-16 h-16 rounded-full bg-primary-fixed/40 flex items-center justify-center text-3xl">
-              🌿
+          <div className="flex flex-col items-center justify-center h-full text-center p-6 gap-3.5 animate-fadeIn">
+            <div className="w-16 h-16 rounded-full bg-primary-container/40 flex items-center justify-center text-3xl shadow-sm border border-primary/20">
+              👋
             </div>
             <h3 className="font-headline font-bold text-base text-on-background">
-              {t('talk_title')}
+              {studentFirstName ? `Hey ${studentFirstName} 👋 How's your day going?` : "Hey! 👋 How are you feeling today?"}
             </h3>
-            <p className="text-xs text-on-surface-variant max-w-sm">
-              {t('talk_desc')}
+            <p className="text-xs text-on-surface-variant max-w-sm leading-relaxed">
+              I'm your NIVARA companion — a quiet space to talk about college pressure, exams, daily stress, or just chat.
             </p>
-            <div className="flex flex-wrap justify-center gap-2 mt-2">
-              {quickPrompts.map((p, idx) => (
+            <div className="flex flex-wrap justify-center gap-2 mt-2 max-w-md">
+              {introQuickReplies.map((p, idx) => (
                 <button
                   key={idx}
                   onClick={() => handleSend(p)}
-                  className="px-3.5 py-2 rounded-full bg-surface-container-lowest border border-outline-variant/40 text-xs text-on-surface hover:bg-surface-container transition-colors"
+                  className="px-3.5 py-2 rounded-full bg-surface-container-lowest border border-outline-variant/50 text-xs font-medium text-on-surface hover:bg-primary-container/25 hover:border-primary/40 hover:text-primary transition-all active:scale-95 shadow-2xs"
                 >
                   {p}
                 </button>
@@ -442,10 +465,10 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
           return (
             <div
               key={m.id}
-              className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[85%] ${isUser ? 'self-end' : 'self-start'}`}
+              className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[85%] ${isUser ? 'self-end' : 'self-start'} animate-fadeIn`}
             >
               <div
-                className={`p-4 rounded-2xl text-xs leading-relaxed shadow-sm ${
+                className={`p-4 rounded-2xl text-xs leading-relaxed shadow-sm transition-all ${
                   isUser
                     ? 'bg-primary text-on-primary rounded-br-none'
                     : isRed
@@ -457,6 +480,69 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
               >
                 {m.message}
 
+                {/* Optional Mind Relaxation Exercise Recommendations */}
+                {m.suggested_exercise && !isRed && (
+                  <div className="mt-3 pt-2.5 border-t border-current/10 flex flex-wrap gap-2">
+                    {m.suggested_exercise === 'breathing' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onNavigateTab) onNavigateTab('exercises');
+                          else onRequestCounsellor();
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/40 text-teal-700 dark:text-teal-300 text-[11px] font-semibold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                      >
+                        <span className="text-sm">🌬</span>
+                        <span>{t('exercise_breathing', 'Start Breathing Exercise')}</span>
+                        <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                      </button>
+                    )}
+                    {m.suggested_exercise === 'grounding' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onNavigateTab) onNavigateTab('exercises');
+                          else onRequestCounsellor();
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                      >
+                        <span className="text-sm">🌿</span>
+                        <span>{t('exercise_grounding', 'Try Grounding Exercise')}</span>
+                        <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                      </button>
+                    )}
+                    {m.suggested_exercise === 'relaxation' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onNavigateTab) onNavigateTab('exercises');
+                          else onRequestCounsellor();
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/40 text-indigo-700 dark:text-indigo-300 text-[11px] font-semibold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                      >
+                        <span className="text-sm">🧘</span>
+                        <span>{t('exercise_relaxation', 'Try Relaxation Exercise')}</span>
+                        <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                      </button>
+                    )}
+                    {m.suggested_exercise === 'positive_self_talk' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onNavigateTab) onNavigateTab('exercises');
+                          else onRequestCounsellor();
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-[11px] font-semibold flex items-center gap-1.5 transition-all active:scale-95 shadow-2xs"
+                      >
+                        <span className="text-sm">✨</span>
+                        <span>{t('exercise_selftalk', 'Try Positive Self-Talk')}</span>
+                        <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Red Crisis Alert Integration (Uses existing SOS Support & Emergency Helplines) */}
                 {isRed && (
                   <div className="mt-3 pt-2.5 border-t border-error/30 flex flex-wrap items-center gap-2">
                     {onOpenSOS && (
@@ -473,18 +559,19 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
                       className="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-variant text-on-surface text-[11px] font-semibold flex items-center gap-1 border border-outline-variant/40"
                     >
                       <span className="material-symbols-outlined text-sm text-error">call</span>
-                      <span>{t('helplines_btn', 'Helplines')}</span>
+                      <span>{t('helplines_btn', 'Helplines (14416 / 112)')}</span>
                     </button>
                   </div>
                 )}
 
+                {/* Yellow Moderate Support */}
                 {isYellow && (
                   <div className="mt-3 pt-2 border-t border-tertiary-container/40 flex items-center gap-2">
                     <button
                       onClick={onRequestCounsellor}
-                      className="px-3 py-1.5 rounded-full bg-secondary text-on-secondary text-[11px] font-semibold"
+                      className="px-3 py-1.5 rounded-full bg-secondary text-on-secondary text-[11px] font-semibold transition-all active:scale-95"
                     >
-                      {t('tab_support')}
+                      {t('tab_support', 'Connect with Counselor')}
                     </button>
                   </div>
                 )}
@@ -516,8 +603,8 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
                   )}
 
                   {fb?.showOptions && !fb?.submitted && (
-                    <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl bg-surface-container-low border border-outline-variant/30 animate-fadeIn mt-1">
-                      <span className="text-[10px] text-on-surface-variant w-full">
+                    <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl bg-surface-container-low border border-outline-variant/30 animate-fadeIn mt-1 shadow-2xs">
+                      <span className="text-[10px] text-on-surface-variant w-full font-medium">
                         What could have been better?
                       </span>
                       {['Too generic', "Didn't understand me", 'Too long', 'Not helpful', 'Other'].map((tag) => (
@@ -525,7 +612,7 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
                           key={tag}
                           type="button"
                           onClick={() => handleFeedbackTag(m.id, tag)}
-                          className="px-2 py-1 rounded-lg bg-surface-container text-[10px] font-medium text-on-surface hover:bg-surface-variant"
+                          className="px-2 py-1 rounded-lg bg-surface-container text-[10px] font-medium text-on-surface hover:bg-surface-variant transition-all active:scale-95"
                         >
                           {tag}
                         </button>
@@ -544,15 +631,42 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
           );
         })}
 
+        {/* Friendly Animated Typing Indicator */}
         {loading && (
-          <div className="flex items-center gap-2 p-3.5 bg-surface-container rounded-2xl rounded-bl-none w-max">
-            <span className="w-2 h-2 rounded-full bg-primary animate-bounce" />
-            <span className="w-2 h-2 rounded-full bg-primary animate-bounce [animation-delay:0.2s]" />
-            <span className="w-2 h-2 rounded-full bg-primary animate-bounce [animation-delay:0.4s]" />
+          <div className="flex items-center gap-2 p-3 bg-surface-container-low border border-outline-variant/30 rounded-2xl rounded-bl-none w-max animate-fadeIn shadow-2xs">
+            <span className="text-[11px] text-on-surface-variant font-medium flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              NIVARA is listening...
+            </span>
+            <div className="flex items-center gap-1 ml-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" />
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:0.15s]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:0.3s]" />
+            </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Dynamic Contextual Quick-Reply Suggestions Strip */}
+      {activeQuickReplies.length > 0 && !loading && (
+        <div className="py-1.5 px-0.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar animate-fadeIn">
+          <span className="text-[10px] text-on-surface-variant font-semibold shrink-0 flex items-center gap-1">
+            <span className="material-symbols-outlined text-[13px] text-primary">lightbulb</span>
+            Suggestions:
+          </span>
+          {activeQuickReplies.map((replyText, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => handleSend(replyText)}
+              className="px-3 py-1 rounded-full bg-surface-container hover:bg-primary-container/30 hover:border-primary/40 hover:text-primary text-[11px] font-medium text-on-surface border border-outline-variant/40 shrink-0 transition-all active:scale-95 shadow-2xs"
+            >
+              {replyText}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Input Bar with Voice Recognition Button & Clean Composer */}
       <form
@@ -565,12 +679,12 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
         <button
           type="button"
           onClick={handleToggleVoice}
-          className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shrink-0 ${
+          className={`w-11 h-11 rounded-full flex items-center justify-center transition-all shrink-0 ${
             isListening
               ? 'bg-error text-on-error animate-pulse shadow-lg ring-4 ring-error/30'
               : 'bg-surface-container hover:bg-surface-variant text-on-surface'
           }`}
-          title={isListening ? t('talk_listening') : 'Tap to speak (Speech-to-Text)'}
+          title={isListening ? t('talk_listening', 'Listening...') : 'Tap to speak (Speech-to-Text)'}
         >
           <span className="material-symbols-outlined text-lg">
             {isListening ? 'mic_off' : 'mic'}
@@ -579,16 +693,16 @@ export const TalkCompanionChat: React.FC<Props> = ({ onOpenSafety, onOpenSOS, on
 
         <input
           type="text"
-          placeholder={isListening ? t('talk_listening') : t('talk_input_placeholder')}
+          placeholder={isListening ? t('talk_listening', 'Listening...') : t('talk_input_placeholder', 'Share your thoughts, exam worries, or feelings...')}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          className="flex-1 px-5 py-3.5 rounded-full bg-surface-container-lowest border border-outline-variant/60 text-xs focus:outline-none focus:border-primary text-on-background shadow-sm"
+          className="flex-1 px-4 py-3 rounded-full bg-surface-container-lowest border border-outline-variant/60 text-xs focus:outline-none focus:border-primary text-on-background shadow-2xs transition-all"
         />
 
         <button
           type="submit"
           disabled={!input.trim() || loading}
-          className="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center hover:bg-primary-container transition-colors disabled:opacity-50 shadow-sm shrink-0"
+          className="w-11 h-11 rounded-full bg-primary text-on-primary flex items-center justify-center hover:bg-primary-container transition-colors disabled:opacity-50 shadow-xs shrink-0 active:scale-95"
         >
           <span className="material-symbols-outlined text-lg">send</span>
         </button>

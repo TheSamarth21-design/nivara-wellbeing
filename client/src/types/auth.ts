@@ -9,6 +9,9 @@ export interface UserProfile {
   role: UserRole;
   wellbeingId?: string;
   department?: string;
+  preferredName?: string;
+  academicYear?: string;
+  college?: string;
   createdAt?: any;
   updatedAt?: any;
 }

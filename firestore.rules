@@ -26,18 +26,29 @@ service cloud.firestore {
       allow write: if isOwner(userId);
 
       // Daily Wellbeing Check-ins stored under users/{userId}/checkins/{checkinId}
-      // Strictly secured: owner has full access; counselors can review for support
+      // Strictly secured: owner has full access (read, create, update, delete)
       match /checkins/{checkinId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userId || isCounselor());
-        allow write: if isOwner(userId);
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // Alternative subcollection path users/{userId}/wellbeingCheckins/{checkinId}
+      match /wellbeingCheckins/{checkinId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
     }
 
-    // Top-level check-ins collection (if accessed, must match authenticated user's UID or counselor)
+    // Top-level check-ins collection (if accessed, must match authenticated user's UID)
     match /checkins/{checkinId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isCounselor());
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.studentId == request.auth.uid);
+      allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || request.resource.data.studentId == request.auth.uid);
+      allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.studentId == request.auth.uid);
+    }
+
+    // Top-level wellbeingCheckins collection (if accessed, must match authenticated user's UID)
+    match /wellbeingCheckins/{checkinId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.studentId == request.auth.uid);
+      allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || request.resource.data.studentId == request.auth.uid);
+      allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.studentId == request.auth.uid);
     }
 
     // Confidential Counselor Support Queue & Messages
@@ -51,11 +62,6 @@ service cloud.firestore {
 
     // SOS Emergency Support Requests (Live Audio / Video Sessions)
     match /supportRequests/{requestId} {
-      // Read access:
-      // - The requesting student can read their own request
-      // - The assigned counselor can read the request
-      // - Any authenticated user / counselor can read requests in 'waiting' or 'pending' queue
-      // - Verified counselors can read requests
       allow read: if isAuthenticated() && (
         resource.data.studentId == request.auth.uid ||
         resource.data.counselorId == request.auth.uid ||
@@ -63,17 +69,10 @@ service cloud.firestore {
         isCounselor()
       );
 
-      // Create access:
-      // - Authenticated student creates a request where studentId matches their auth UID
       allow create: if isAuthenticated() && (
         request.resource.data.studentId == request.auth.uid
       );
 
-      // Update access:
-      // - Student owner can update their request (cancel, complete, mark active)
-      // - Counselors can update requests in 'waiting' / 'pending' status (accept or decline)
-      // - Assigned counselor can update their active session
-      // - User assigning themselves as counselor (accepting)
       allow update: if isAuthenticated() && (
         resource.data.studentId == request.auth.uid ||
         resource.data.status in ['waiting', 'pending'] ||
@@ -82,8 +81,6 @@ service cloud.firestore {
         isCounselor()
       );
 
-      // Delete access:
-      // - Only the student owner can delete their request
       allow delete: if isAuthenticated() && resource.data.studentId == request.auth.uid;
     }
   }

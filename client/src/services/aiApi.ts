@@ -426,7 +426,8 @@ export class AiApiClient {
    */
   public static async sendChatMessage(
     message: string,
-    conversationId?: string
+    conversationId?: string,
+    context?: Record<string, unknown>
   ): Promise<AiChatResponse> {
     const cleanEndpoint = '/api/v1/ai/chat';
     const url = `${AI_BASE_URL}${cleanEndpoint}`;
@@ -442,7 +443,8 @@ export class AiApiClient {
 
     const payload: AiChatRequest = {
       message: message.trim(),
-      ...(conversationId ? { conversation_id: conversationId } : {})
+      ...(conversationId ? { conversation_id: conversationId } : {}),
+      ...(context ? { context } : {})
     };
 
     const headers: Record<string, string> = {

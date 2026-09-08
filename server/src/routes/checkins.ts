@@ -74,3 +74,35 @@ checkinsRouter.get('/adaptive', (req: AuthRequest, res) => {
   const adaptive = db.getAdaptiveQuestion(wellbeingId);
   res.json({ adaptiveQuestion: adaptive });
 });
+
+// GET Recent check-ins for the authenticated student (Phase 8 API)
+checkinsRouter.get('/recent', (req: AuthRequest, res) => {
+  const wellbeingId = req.user!.wellbeingId;
+  const history = db.getEnhancedCheckins(wellbeingId, 7);
+  res.json({ checkins: history });
+});
+
+// GET Non-clinical trend summary for the authenticated student (Phase 8 API)
+checkinsRouter.get('/trends', (req: AuthRequest, res) => {
+  const wellbeingId = req.user!.wellbeingId;
+  const history = db.getEnhancedCheckins(wellbeingId, 14);
+  const twin = BaselineEngine.calculateTwinState(wellbeingId);
+
+  const trends = {
+    recentMoodTrend:
+      twin.currentPatternState === 'Improving'
+        ? 'improving'
+        : twin.currentPatternState === 'Needs Attention'
+        ? 'declining'
+        : 'stable',
+    stressTrend: history.some(h => h.stress_level === 'High') ? 'high' : 'moderate',
+    sleepTrend: history.some(h => h.sleep_quality === 'Poor') ? 'poor' : 'good',
+    academicPressure: 'moderate',
+    keyConcerns: twin.currentPatternState === 'Needs Attention' ? ['Elevated stress'] : [],
+    positiveSignals: twin.insights.slice(0, 2),
+    checkinCount: history.length,
+    latestMood: history[0]?.mood_tier || 'Okay'
+  };
+
+  res.json({ trends });
+});

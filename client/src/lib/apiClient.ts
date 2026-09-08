@@ -186,8 +186,8 @@ export class ApiClient {
     ];
   }
 
-  public static async sendAIMessage(message: string, conversationId?: string) {
-    const res = await AiApiClient.sendChatMessage(message, conversationId);
+  public static async sendAIMessage(message: string, conversationId?: string, context?: Record<string, unknown>) {
+    const res = await AiApiClient.sendChatMessage(message, conversationId, context);
     let safetyTier: 'GREEN' | 'YELLOW' | 'RED' = 'GREEN';
     if (res.safety_status === 'crisis') {
       safetyTier = 'RED';
@@ -199,7 +199,10 @@ export class ApiClient {
       reply: res.response,
       safetyTier,
       conversationId: res.conversation_id,
-      suggestedAction: res.safety_status === 'crisis' ? 'counsellor' : undefined
+      suggestedAction: res.safety_status === 'crisis' ? 'counsellor' : undefined,
+      suggestedQuickReplies: res.suggested_quick_replies || ((res as any)?.data?.suggested_quick_replies as string[] | undefined),
+      suggestedExercise: res.suggested_exercise || ((res as any)?.data?.suggested_exercise as string | undefined),
+      detectedEmotion: res.detected_emotion || ((res as any)?.data?.detected_emotion as string | undefined)
     };
   }
 
